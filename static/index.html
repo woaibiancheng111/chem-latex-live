@@ -253,6 +253,7 @@
             <input type="search" id="symSearchInput" placeholder="搜索键型、方位、苯环、箭头或公式..." />
           </div>
         </div>
+        <div class="side-mode-banner" id="symComposerBanner">拼装模式：点环系/箭头直接添加积木，点键型/方位将自动切入源码精修</div>
         <div class="ribbon-tabs" id="ribbonTabs" role="tablist"></div>
         <div class="ribbon-body" id="ribbonBody"></div>
       </div>
@@ -352,9 +353,6 @@
               <button type="button" class="chip-btn mono" id="wrapChemfigBtn" title="用 \chemfig{...} 包裹选中文本或光标处">\chemfig{}</button>
               <button type="button" class="chip-btn mono" id="wrapSchemeBtn" title="用 \schemestart ... \schemestop 包裹">框图</button>
               <button type="button" class="chip-btn" id="formatCodeBtn" title="按反应步和支链换行缩进（保留 TeX %）">格式化</button>
-              <button type="button" class="chip-btn" id="layoutToggleBtn" title="展开/收起 chemfig 排版微调参数">
-                <svg class="icon sm"><use href="#ic-sliders"/></svg> 排版
-              </button>
             </div>
             <div class="editor-actions-right">
               <button type="button" class="icon-btn sm" id="undoBtn" title="撤销 (Ctrl+Z)">
@@ -365,9 +363,6 @@
               </button>
               <button type="button" class="icon-btn sm active" id="wordWrapBtn" title="切换代码自动折行">
                 <svg class="icon"><use href="#ic-wrap"/></svg>
-              </button>
-              <button type="button" class="icon-btn sm" id="saveFavBtn" title="将当前代码保存到我的收藏">
-                <svg class="icon"><use href="#ic-star"/></svg>
               </button>
               <div class="dropdown-wrap">
                 <button type="button" class="icon-btn sm dropdown-trigger" title="更多代码操作">
@@ -385,32 +380,6 @@
 
           <!-- 源码模式轻量单行高频快捷条 -->
           <div class="code-quick-strip" id="codeQuickStrip"></div>
-
-          <!-- 可折叠排版参数条 -->
-          <div class="layout-bar hidden" id="layoutBar">
-            <label>键长 (atom sep)
-              <input type="text" id="optAtomSep" placeholder="默认 3em" title="如 2.4em、3em、1.2cm" />
-            </label>
-            <label>键距 (bond offset)
-              <input type="text" id="optBondOffset" placeholder="默认 2pt" title="如 1.5pt、2pt" />
-            </label>
-            <label>双键间距
-              <input type="text" id="optDoubleSep" placeholder="默认 2pt" title="如 2pt、2.8pt" />
-            </label>
-            <label>字号
-              <select id="optFontSize">
-                <option value="small">\small</option>
-                <option value="normalsize" selected>\normalsize</option>
-                <option value="large">\large</option>
-                <option value="Large">\Large</option>
-              </select>
-            </label>
-            <button type="button" class="chip-btn" id="resetOptsBtn" title="恢复默认排版参数">重置</button>
-            <button type="button" class="chip-btn" id="togglePreambleBtn" title="添加自定义导言区宏包或命令">导言区</button>
-          </div>
-          <div class="preamble-bar hidden" id="preambleBar">
-            <input type="text" id="optPreamble" placeholder="可选附加导言区命令（例如 \usetikzlibrary{calc} 或 \setchemfig{cram width=3pt}）" />
-          </div>
 
           <!-- 带行号 + 语法与括号高亮代码输入区 -->
           <div class="code-box word-wrap" id="codeBox">
@@ -465,7 +434,42 @@
             <span class="render-badge idle" id="renderBadge">就绪</span>
             <span class="dim-badge" id="dimBadge"></span>
           </div>
-          <span class="preview-gesture-tip">拖拽平移 · Ctrl+滚轮缩放 · 双击复位</span>
+          <div class="preview-toolbar-actions">
+            <button type="button" class="chip-btn" id="layoutToggleBtn" title="排版参数（键长 / 字号 / 导言区，双模式全局生效）">
+              <svg class="icon sm"><use href="#ic-sliders"/></svg>
+              <span>排版</span>
+              <span class="opt-dot hidden" id="layoutActiveDot"></span>
+            </button>
+            <button type="button" class="icon-btn sm" id="saveFavBtn" title="将当前公式保存到我的收藏">
+              <svg class="icon"><use href="#ic-star"/></svg>
+            </button>
+          </div>
+        </div>
+
+        <!-- 全局可折叠排版参数条（拼装/源码双模式共享） -->
+        <div class="layout-bar hidden" id="layoutBar">
+          <label>键长 (atom sep)
+            <input type="text" id="optAtomSep" placeholder="默认 3em" title="如 2.4em、3em、1.2cm" />
+          </label>
+          <label>键距 (bond offset)
+            <input type="text" id="optBondOffset" placeholder="默认 2pt" title="如 1.5pt、2pt" />
+          </label>
+          <label>双键间距
+            <input type="text" id="optDoubleSep" placeholder="默认 2pt" title="如 2pt、2.8pt" />
+          </label>
+          <label>字号
+            <select id="optFontSize">
+              <option value="small">\small</option>
+              <option value="normalsize" selected>\normalsize</option>
+              <option value="large">\large</option>
+              <option value="Large">\Large</option>
+            </select>
+          </label>
+          <button type="button" class="chip-btn" id="resetOptsBtn" title="恢复默认排版参数">重置</button>
+          <button type="button" class="chip-btn" id="togglePreambleBtn" title="添加自定义导言区宏包或命令">导言区</button>
+        </div>
+        <div class="preamble-bar hidden" id="preambleBar">
+          <input type="text" id="optPreamble" placeholder="可选附加导言区命令（例如 \usetikzlibrary{calc} 或 \setchemfig{cram width=3pt}）" />
         </div>
 
         <!-- SVG 预览舞台 + 底部居中悬浮控制胶囊 -->

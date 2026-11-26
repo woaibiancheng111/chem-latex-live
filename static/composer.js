@@ -69,6 +69,10 @@
     return /\\[A-Za-z]+|\$|[_^]/.test(String(raw || ""));
   }
 
+  function isStandaloneEnvCode(code) {
+    return /\\schemestart|\\\[|\$\$|\\begin\{tikzpicture\}/.test(String(code || ""));
+  }
+
   function escapeLatexText(raw) {
     const replacements = {
       "\\": "\\textbackslash{}",
@@ -228,6 +232,12 @@
         if (style === "<->") return "\\ce{<->}";
         return "\\ce{->}";
       }
+      if (b.type === "raw") {
+        const raw = (b.code || "").trim();
+        const disp = raw.match(/^\\\[([\s\S]*?)\\\]$/);
+        if (disp) return `$\\displaystyle ${disp[1].trim()}$`;
+        return raw || "\\ce{?}";
+      }
       return (b.code || "").trim() || "\\ce{?}";
     }
 
@@ -246,9 +256,6 @@
       if (st.layoutMode === "flow") {
         const nonNewline = st.blocks.filter((b) => b.type !== "newline");
         if (nonNewline.length === 0) return "";
-        if (nonNewline.length === 1 && !["arrow", "plus"].includes(nonNewline[0].type)) {
-          return blockLatex(nonNewline[0]);
-        }
 
         const rows = [];
         let cur = [];
@@ -262,12 +269,36 @@
         }
         if (cur.length) rows.push(cur);
 
-        return rows
-          .map((row) => {
-            const parts = row.map((b) => blockLatex(b)).filter(Boolean);
-            return `\\schemestart\n  ${parts.join(" ")}\n\\schemestop`;
-          })
-          .join("\n\\par\\medskip\n");
+        const segments = [];
+        const flushChunk = (chunk) => {
+          if (!chunk.length) return;
+          if (chunk.length === 1 && !["arrow", "plus"].includes(chunk[0].type)) {
+            const single = blockLatex(chunk[0]);
+            if (single) segments.push(single);
+            return;
+          }
+          const parts = chunk.map((b) => blockLatex(b)).filter(Boolean);
+          if (parts.length) {
+            segments.push(`\\schemestart\n  ${parts.join(" ")}\n\\schemestop`);
+          }
+        };
+
+        rows.forEach((row) => {
+          let chunk = [];
+          row.forEach((b) => {
+            if (b.type === "raw" && isStandaloneEnvCode(b.code)) {
+              flushChunk(chunk);
+              chunk = [];
+              const code = blockLatex(b);
+              if (code) segments.push(code);
+            } else {
+              chunk.push(b);
+            }
+          });
+          flushChunk(chunk);
+        });
+
+        return segments.join("\n\\par\\medskip\n");
       }
 
       // Free Canvas Mode: \savebox + tikzpicture using block center coordinates (avoids nested tikzpicture)
@@ -455,7 +486,7 @@
           existing.sketchData = sketchData || null;
           existing.svg = "";
           render();
-          syncOutput();
+          syncOutput({ immediate: true });
           ensureBlockSvg(existing);
           return existing;
         }
@@ -743,6 +774,24 @@
         render();
         syncOutput({ immediate: true });
       });
+
+      if (b.type === "chemfig") {
+        const sketchBtn = document.createElement("button");
+        sketchBtn.type = "button";
+        sketchBtn.className = "cmp-mini-btn";
+        sketchBtn.textContent = "⬡";
+        sketchBtn.title = "在 2D 分子画板中编辑结构";
+        sketchBtn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          opts.onOpenSketch?.({
+            blockId: b.id,
+            sketchData: b.sketchData || null,
+            code: b.code || "",
+            name: b.name || "",
+          });
+        });
+        miniActions.appendChild(sketchBtn);
+      }
 
       miniActions.append(editBtn, dupBtn, delBtn);
       card.appendChild(miniActions);
@@ -1360,8 +1409,8 @@
       syncOutput({ immediate: true });
     });
 
-    els.undoBtn.addEventListener("click", () => {
-      if (st.undoStack.length === 0) return;
+    function performUndo() {
+      if (st.undoStack.length === 0) return false;
       st.redoStack.push(cloneData({ layoutMode: st.layoutMode, blocks: st.blocks, connectors: st.connectors }));
       const prev = st.undoStack.pop();
       st.layoutMode = prev.layoutMode;
@@ -1370,10 +1419,11 @@
       closePopover();
       render();
       syncOutput({ immediate: true });
-    });
+      return true;
+    }
 
-    els.redoBtn?.addEventListener("click", () => {
-      if (st.redoStack.length === 0) return;
+    function performRedo() {
+      if (st.redoStack.length === 0) return false;
       st.undoStack.push(cloneData({ layoutMode: st.layoutMode, blocks: st.blocks, connectors: st.connectors }));
       const nxt = st.redoStack.pop();
       st.layoutMode = nxt.layoutMode;
@@ -1382,7 +1432,40 @@
       closePopover();
       render();
       syncOutput({ immediate: true });
-    });
+      return true;
+    }
+
+    function deleteSelected() {
+      if (!st.selectedBlockId) return false;
+      const idx = st.blocks.findIndex((b) => b.id === st.selectedBlockId);
+      if (idx === -1) return false;
+      pushUndo();
+      const bid = st.selectedBlockId;
+      st.blocks.splice(idx, 1);
+      st.connectors = st.connectors.filter((c) => c.from !== bid && c.to !== bid);
+      st.selectedBlockId = null;
+      closePopover();
+      render();
+      syncOutput({ immediate: true });
+      return true;
+    }
+
+    function handleEscape() {
+      if (!els.popover.classList.contains("hidden")) {
+        closePopover();
+        return true;
+      }
+      if (st.connectTool || st.connectFromId) {
+        st.connectTool = null;
+        st.connectFromId = null;
+        render();
+        return true;
+      }
+      return false;
+    }
+
+    els.undoBtn.addEventListener("click", performUndo);
+    els.redoBtn?.addEventListener("click", performRedo);
 
     els.clearBtn.addEventListener("click", () => {
       if (st.blocks.length === 0) return;
@@ -1562,11 +1645,15 @@
       return blocks.length > 0 ? blocks : null;
     }
 
-    function syncFromLatex(rawCode) {
+    function syncFromLatex(rawCode, { recordUndo = true, fallbackName = "自定义 LaTeX", fallbackSvg = "" } = {}) {
       const code = (rawCode || "").trim();
       const curGen = generateLatex().trim();
       if (code === curGen) {
         return { synced: false, fallbackRaw: false };
+      }
+
+      if (recordUndo && st.blocks.length > 0) {
+        pushUndo();
       }
 
       const oldByCode = new Map();
@@ -1633,6 +1720,8 @@
       if (code.startsWith("\\chemfig")) {
         const parsed = parseSchemeTokens(code, oldByCode);
         if (parsed && parsed.length === 1 && parsed[0].type === "chemfig") {
+          if (fallbackName && fallbackName !== "自定义 LaTeX") parsed[0].name = fallbackName;
+          if (!parsed[0].svg && fallbackSvg) parsed[0].svg = fallbackSvg;
           st.layoutMode = "flow";
           st.connectors = [];
           st.blocks = parsed;
@@ -1650,9 +1739,9 @@
         const blk = {
           id: uid(),
           type: "ce",
-          name: oldByCode.get(code)?.name || "化学式",
+          name: oldByCode.get(code)?.name || fallbackName || "化学式",
           ce: ceSingle[1].trim(),
-          svg: oldByCode.get(code)?.svg || "",
+          svg: oldByCode.get(code)?.svg || fallbackSvg || "",
           x: 60,
           y: 80,
         };
@@ -1670,9 +1759,9 @@
       const rawBlk = {
         id: uid(),
         type: "raw",
-        name: "自定义 LaTeX",
+        name: fallbackName || "自定义 LaTeX",
         code,
-        svg: "",
+        svg: oldByCode.get(code)?.svg || fallbackSvg || "",
         x: 60,
         y: 80,
       };
@@ -1794,6 +1883,11 @@
       getMode: () => st.layoutMode,
       syncNow: (syncOpts) => syncOutput(syncOpts || { immediate: true }),
       loadPreset,
+      undo: performUndo,
+      redo: performRedo,
+      deleteSelected,
+      handleEscape,
+      isStandaloneEnvCode,
       hasBlocks: () => st.blocks.some((b) => b.type !== "newline"),
     };
   }

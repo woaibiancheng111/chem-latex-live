@@ -113,6 +113,7 @@
     ribbonTabs: $("ribbonTabs"),
     ribbonBody: $("ribbonBody"),
     symSearchInput: $("symSearchInput"),
+    symComposerBanner: $("symComposerBanner"),
     favoritesList: $("favoritesList"),
     panelSaveFavBtn: $("panelSaveFavBtn"),
     editorPane: $("editorPane"),
@@ -138,6 +139,7 @@
     bracketStatus: $("bracketStatus"),
     compileNowBtn: $("compileNowBtn"),
     layoutToggleBtn: $("layoutToggleBtn"),
+    layoutActiveDot: $("layoutActiveDot"),
     layoutBar: $("layoutBar"),
     preambleBar: $("preambleBar"),
     togglePreambleBtn: $("togglePreambleBtn"),
@@ -191,6 +193,8 @@
     ocrStatusText: $("ocrStatusText"),
     ocrOutput: $("ocrOutput"),
     ocrActions: $("ocrActions"),
+    ocrInsertBtn: $("ocrInsertBtn"),
+    ocrLoadBtn: $("ocrLoadBtn"),
     ocrError: $("ocrError"),
     guideModal: $("guideModal"),
     drawerList: $("drawerList"),
@@ -1719,6 +1723,47 @@
     card.addEventListener("mousedown", hideLibHoverPreview);
   }
 
+  function isStandaloneFormulaCode(code) {
+    return /\\schemestart|\\\[|\$\$|\\begin\{tikzpicture\}/.test(String(code || ""));
+  }
+
+  function loadTemplateItem(item) {
+    const code = (item?.code || "").trim();
+    if (!code) return;
+    const svg = (state.catalog.previews || {})[item.id] || item.svg || "";
+    setEditorCode(code, { render: true, immediate: true, recordUndo: true });
+    if (state.editorMode === "composer" && state.composer) {
+      state.composer.syncFromLatex(code, {
+        recordUndo: true,
+        fallbackName: item.name || "公式模板",
+        fallbackSvg: svg,
+      });
+    }
+    toast(`已载入模板：${item.name || "公式"}`);
+  }
+
+  function updateLayoutBadge() {
+    if (!els.layoutActiveDot) return;
+    const active = Boolean(
+      els.optAtomSep?.value.trim() ||
+      els.optBondOffset?.value.trim() ||
+      els.optDoubleSep?.value.trim() ||
+      els.optPreamble?.value.trim() ||
+      (els.optFontSize?.value && els.optFontSize.value !== "normalsize")
+    );
+    els.layoutActiveDot.classList.toggle("hidden", !active);
+  }
+
+  function syncOcrModalLabels() {
+    const isComposer = state.editorMode === "composer";
+    if (els.ocrInsertBtn) {
+      els.ocrInsertBtn.textContent = isComposer ? "加入拼装画布" : "插入到光标处";
+    }
+    if (els.ocrLoadBtn) {
+      els.ocrLoadBtn.textContent = isComposer ? "覆盖画布并渲染" : "载入并渲染";
+    }
+  }
+
   function renderLibrary() {
     const cats =
       state.libMode === "molecules"
@@ -1769,11 +1814,14 @@
     const previews = state.catalog.previews || {};
     const frag = document.createDocumentFragment();
     filtered.forEach((item) => {
+      const isWholeTemplate = state.libMode === "formulas" || isStandaloneFormulaCode(item.code);
       const card = document.createElement("article");
       card.className = "lib-card";
       card.draggable = true;
       card.title = state.editorMode === "composer"
-        ? `点击或拖动到左侧拼装画布\n${item.code}`
+        ? (isWholeTemplate
+            ? `点击整套载入模板（支持 Ctrl+Z 撤销），点 + 或拖动追加\n${item.code}`
+            : `点击或拖动加入拼装画布\n${item.code}`)
         : `点击载入到编辑器\n${item.code}`;
 
       card.addEventListener("dragstart", (e) => {
@@ -1858,9 +1906,14 @@
       card.appendChild(badges);
 
       card.addEventListener("click", () => {
+        hideLibHoverPreview();
         if (state.editorMode === "composer" && state.composer) {
-          state.composer.addBlockFromLibrary(item);
-          toast(`已加入拼装画布：${item.name}`);
+          if (isWholeTemplate) {
+            loadTemplateItem(item);
+          } else {
+            state.composer.addBlockFromLibrary(item);
+            toast(`已加入拼装画布：${item.name}`);
+          }
         } else {
           setEditorCode(item.code, { render: true, immediate: true, recordUndo: true });
           toast(`已载入：${item.name}`);
@@ -1888,6 +1941,20 @@
     state.favorites.forEach((item) => {
       const card = document.createElement("div");
       card.className = "fav-card";
+      card.draggable = true;
+      card.addEventListener("dragstart", (e) => {
+        e.dataTransfer.effectAllowed = "copy";
+        e.dataTransfer.setData(
+          "application/x-chemlatex-lib",
+          JSON.stringify({
+            id: item.id,
+            name: item.name,
+            code: item.code,
+            packages: item.packages || [],
+            svg: previews[item.id] || item.svg || "",
+          })
+        );
+      });
 
       const actions = document.createElement("div");
       actions.className = "lib-card-actions has-fav";
@@ -1940,9 +2007,14 @@
       card.appendChild(sub);
 
       card.addEventListener("click", () => {
+        hideLibHoverPreview();
         if (state.editorMode === "composer" && state.composer) {
-          state.composer.addBlockFromLibrary(item);
-          toast(`已加入拼装画布：${item.name}`);
+          if (isStandaloneFormulaCode(item.code)) {
+            loadTemplateItem(item);
+          } else {
+            state.composer.addBlockFromLibrary(item);
+            toast(`已加入拼装画布：${item.name}`);
+          }
         } else {
           setEditorCode(item.code, { render: true, immediate: true, recordUndo: true });
           toast(`已载入：${item.name}`);
@@ -2094,6 +2166,28 @@
       },
     ];
 
+    state.favorites.forEach((item) => {
+      cmds.push({
+        kind: "收藏",
+        title: item.name || "已收藏片段",
+        sub: item.subtitle || item.code,
+        keywords: `fav 收藏 ${item.name || ""} ${item.subtitle || ""} ${item.keywords || ""} ${item.code || ""}`,
+        run: () => {
+          if (state.editorMode === "composer" && state.composer) {
+            if (isStandaloneFormulaCode(item.code)) {
+              loadTemplateItem(item);
+            } else {
+              state.composer.addBlockFromLibrary(item);
+              toast(`已加入拼装画布：${item.name}`);
+            }
+          } else {
+            setEditorCode(item.code, { render: true, immediate: true, recordUndo: true });
+            toast(`已载入：${item.name}`);
+          }
+        },
+      });
+    });
+
     (state.catalog.formula_templates || []).forEach((item) => {
       cmds.push({
         kind: "公式模板",
@@ -2101,13 +2195,7 @@
         sub: item.subtitle || item.code,
         keywords: `${item.name} ${item.subtitle || ""} ${item.keywords || ""} ${item.code}`,
         run: () => {
-          if (state.editorMode === "composer" && state.composer) {
-            state.composer.addBlockFromLibrary(item);
-            toast(`已加入拼装画布：${item.name}`);
-          } else {
-            setEditorCode(item.code, { render: true, immediate: true, recordUndo: true });
-            toast(`已载入：${item.name}`);
-          }
+          loadTemplateItem(item);
         },
       });
     });
@@ -2120,8 +2208,12 @@
         keywords: `${item.name} ${item.subtitle || ""} ${item.keywords || ""} ${item.code}`,
         run: () => {
           if (state.editorMode === "composer" && state.composer) {
-            state.composer.addBlockFromLibrary(item);
-            toast(`已加入拼装画布：${item.name}`);
+            if (isStandaloneFormulaCode(item.code)) {
+              loadTemplateItem(item);
+            } else {
+              state.composer.addBlockFromLibrary(item);
+              toast(`已加入拼装画布：${item.name}`);
+            }
           } else {
             setEditorCode(item.code, { render: true, immediate: true, recordUndo: true });
             toast(`已载入：${item.name}`);
@@ -2584,10 +2676,17 @@
 
     els.compileNowBtn.addEventListener("click", () => scheduleRender(true));
     els.errorMsg.addEventListener("click", () => {
-      if (state.errorLine) jumpToLine(state.errorLine);
+      if (!state.errorLine) return;
+      const line = state.errorLine;
+      if (state.editorMode !== "code") {
+        switchEditorMode("code");
+        requestAnimationFrame(() => jumpToLine(line));
+      } else {
+        jumpToLine(line);
+      }
     });
 
-    // Layout options
+    // Layout options (global across Composer & Code modes)
     els.layoutToggleBtn.addEventListener("click", () => {
       const hidden = els.layoutBar.classList.toggle("hidden");
       els.layoutToggleBtn.classList.toggle("active", !hidden);
@@ -2597,7 +2696,11 @@
     });
     [els.optAtomSep, els.optBondOffset, els.optDoubleSep, els.optFontSize, els.optPreamble].forEach(
       (el) => {
-        el.addEventListener("change", () => scheduleRender(true));
+        el.addEventListener("change", () => {
+          updateLayoutBadge();
+          scheduleRender(true);
+        });
+        el.addEventListener("input", updateLayoutBadge);
       }
     );
     els.resetOptsBtn.addEventListener("click", () => {
@@ -2606,6 +2709,7 @@
       els.optDoubleSep.value = "";
       els.optFontSize.value = "normalsize";
       els.optPreamble.value = "";
+      updateLayoutBadge();
       scheduleRender(true);
     });
 
@@ -2662,6 +2766,8 @@
       const isCode = state.editorMode === "code";
       els.composerView.classList.toggle("hidden", isCode);
       els.codeView.classList.toggle("hidden", !isCode);
+      els.symComposerBanner?.classList.toggle("hidden", isCode);
+      syncOcrModalLabels();
       if (isCode) {
         if (prevMode === "composer" && state.composer && state.composer.hasBlocks()) {
           const gen = state.composer.getGeneratedLatex();
@@ -2673,9 +2779,9 @@
         renderCodeHighlight();
         requestAnimationFrame(syncLineNumberHeights);
       } else if (state.composer) {
-        const res = state.composer.syncFromLatex(els.codeEditor.value);
+        const res = state.composer.syncFromLatex(els.codeEditor.value, { recordUndo: true });
         if (res?.synced && res.fallbackRaw) {
-          toast("已将当前自定义 LaTeX 源码同步到拼装画布");
+          toast("已同步自定义源码到拼装画布（按 Ctrl+Z 可撤销恢复原画布）");
         }
       }
       renderLibrary();
@@ -2721,7 +2827,10 @@
       }
       openModal(els.sketchModal);
     });
-    $("openOcrBtn")?.addEventListener("click", () => openModal(els.ocrModal));
+    $("openOcrBtn")?.addEventListener("click", () => {
+      syncOcrModalLabels();
+      openModal(els.ocrModal);
+    });
     $("openGuideBtn").addEventListener("click", () => openModal(els.guideModal));
     els.openCmdPaletteBtn?.addEventListener("click", openCmdPalette);
 
@@ -2745,7 +2854,8 @@
       }
     });
 
-    // Global keyboard shortcuts (Ctrl+K, Ctrl+B, Escape)
+    // Global keyboard shortcuts (Ctrl+K, Ctrl+B, Ctrl+S, Ctrl+Enter, Composer Undo/Redo/Delete, Escape)
+    window.addEventListener("blur", hideLibHoverPreview);
     window.addEventListener("keydown", (e) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
         e.preventDefault();
@@ -2756,6 +2866,10 @@
         }
         return;
       }
+
+      const anyModalOpen = ![els.sketchModal, els.ocrModal, els.guideModal, els.cmdPaletteModal]
+        .every((m) => !m || m.classList.contains("hidden"));
+
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "b") {
         if (!["INPUT", "TEXTAREA"].includes(document.activeElement?.tagName)) {
           e.preventDefault();
@@ -2763,6 +2877,39 @@
           return;
         }
       }
+
+      if (!anyModalOpen && (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
+        e.preventDefault();
+        $("dlSvgBtn").click();
+        return;
+      }
+
+      if (!anyModalOpen && (e.ctrlKey || e.metaKey) && e.key === "Enter") {
+        e.preventDefault();
+        scheduleRender(true);
+        return;
+      }
+
+      const activeTag = document.activeElement?.tagName;
+      const inInput = ["INPUT", "TEXTAREA", "SELECT"].includes(activeTag);
+      if (!anyModalOpen && state.editorMode === "composer" && !inInput) {
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") {
+          e.preventDefault();
+          if (e.shiftKey) state.composer?.redo();
+          else state.composer?.undo();
+          return;
+        }
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "y") {
+          e.preventDefault();
+          state.composer?.redo();
+          return;
+        }
+        if ((e.key === "Delete" || e.key === "Backspace") && state.composer?.deleteSelected()) {
+          e.preventDefault();
+          return;
+        }
+      }
+
       if (e.key === "Escape" && !e.defaultPrevented) {
         if (!els.cmdPaletteModal.classList.contains("hidden")) {
           closeModal(els.cmdPaletteModal);
@@ -2782,6 +2929,10 @@
         }
         if (!els.sketchModal.classList.contains("hidden")) {
           closeModal(els.sketchModal);
+          return;
+        }
+        if (state.editorMode === "composer") {
+          state.composer?.handleEscape();
         }
       }
     });
@@ -2814,6 +2965,9 @@
       if (file) runImageOcr(file);
     });
     window.addEventListener("paste", (e) => {
+      const otherModalOpen = ![els.sketchModal, els.guideModal, els.cmdPaletteModal]
+        .every((m) => !m || m.classList.contains("hidden"));
+      if (otherModalOpen) return;
       const ocrClosed = els.ocrModal.classList.contains("hidden");
       const activeTag = document.activeElement?.tagName;
       if (ocrClosed && ["INPUT", "TEXTAREA"].includes(activeTag)) return;
@@ -2822,7 +2976,10 @@
         if (item.type.startsWith("image/")) {
           const file = item.getAsFile();
           if (file) {
-            if (ocrClosed) openModal(els.ocrModal);
+            if (ocrClosed) {
+              syncOcrModalLabels();
+              openModal(els.ocrModal);
+            }
             runImageOcr(file);
             break;
           }
@@ -2850,14 +3007,24 @@
       renderOcrMiniPreview(els.ocrOutput.value);
     });
     $("ocrInsertBtn").addEventListener("click", () => {
-      insertAtCursor(els.ocrOutput.value.trim());
+      const code = els.ocrOutput.value.trim();
+      if (!code) return;
+      if (state.editorMode === "composer" && state.composer) {
+        state.composer.addBlockFromLibrary({
+          id: `ocr_${Date.now()}`,
+          name: "识图结构",
+          code,
+        });
+        toast("已将识图结果加入拼装画布");
+      } else {
+        insertAtCursor(code);
+      }
       closeModal(els.ocrModal);
     });
     $("ocrLoadBtn").addEventListener("click", () => {
-      setEditorCode(els.ocrOutput.value.trim(), { render: true, immediate: true, recordUndo: true });
-      if (state.editorMode === "composer" && state.composer) {
-        state.composer.syncFromLatex(els.ocrOutput.value.trim());
-      }
+      const code = els.ocrOutput.value.trim();
+      if (!code) return;
+      loadTemplateItem({ id: `ocr_${Date.now()}`, name: "识图结构", code });
       closeModal(els.ocrModal);
     });
 
@@ -2977,6 +3144,9 @@
     });
     els.composerView.classList.toggle("hidden", isCodeInit);
     els.codeView.classList.toggle("hidden", !isCodeInit);
+    els.symComposerBanner?.classList.toggle("hidden", isCodeInit);
+    syncOcrModalLabels();
+    updateLayoutBadge();
 
     const savedCode = localStorage.getItem(STORAGE_KEYS.code);
     if (isCodeInit && savedCode && savedCode.trim()) {

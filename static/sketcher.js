@@ -800,7 +800,7 @@
       if (st.genTimer) clearTimeout(st.genTimer);
       if (st.atoms.length === 0) {
         els.codeOutput.value = "";
-        els.previewSvg.innerHTML = '<span class="sk-empty-hint">拖入上方积木或点击画布绘制，此处实时编译预览</span>';
+        els.previewSvg.innerHTML = '<span class="sk-empty-hint">从左侧选择键型/环系、右侧选择原子/基团，点击或拖入画布绘制</span>';
         els.previewStatus.textContent = "画板为空";
         return;
       }
