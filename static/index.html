@@ -1,0 +1,527 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ChemLaTeX Live — 化学版在线 LaTeX 公式与分子结构编辑器</title>
+  <link rel="stylesheet" href="/static/styles.css?v=20261125-11" />
+</head>
+<body>
+  <!-- 顶部导航栏 -->
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-logo" aria-hidden="true">
+        <svg viewBox="0 0 28 28" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round">
+          <polygon points="14,2.5 24,8.25 24,19.75 14,25.5 4,19.75 4,8.25" />
+          <circle cx="14" cy="14" r="5" />
+        </svg>
+      </div>
+      <div class="brand-text">
+        <strong>ChemLaTeX Live</strong>
+        <span class="brand-badge">mhchem · chemfig · TikZ</span>
+      </div>
+    </div>
+
+    <div class="topbar-actions">
+      <button class="tool-btn accent-btn" id="openSketchBtn" title="使用 2D 分子画板点画结构并生成 chemfig 代码">
+        <span class="btn-icon">⬡</span> 2D 分子画板
+      </button>
+      <button class="tool-btn" id="toggleLibDrawerBtn" title="展开/收起底部模板与分子库抽屉">
+        <span class="btn-icon">☰</span> 模板库 <span class="mini-count" id="libTotalBadge">126</span>
+      </button>
+      <button class="tool-btn" id="openGuideBtn" title="chemfig 8 方位图解与防踩坑指南">
+        <span class="btn-icon">?</span> 语法速查
+      </button>
+      <button class="tool-btn" id="openDrawerBtn" title="查看编辑历史与自定义收藏片段">
+        <span class="btn-icon">★</span> 历史与收藏 <span class="mini-count" id="favCountBadge">0</span>
+      </button>
+      <button class="icon-btn" id="themeToggleBtn" title="切换浅色 / 深色主题" aria-label="切换主题">◐</button>
+    </div>
+  </header>
+
+  <!-- LaTeXLive 风格顶部快捷符号栏 -->
+  <section class="ribbon-shell" id="ribbonShell">
+    <div class="ribbon-header">
+      <div class="ribbon-tabs" id="ribbonTabs" role="tablist"></div>
+      <button class="ribbon-toggle-btn" id="ribbonToggleBtn" title="折叠/展开符号栏">收起符号栏 ▲</button>
+    </div>
+    <div class="ribbon-body" id="ribbonBody"></div>
+  </section>
+
+  <!-- 核心双栏工作区 -->
+  <main class="workspace" id="workspace">
+    <!-- 左侧：拖拽拼装 / LaTeX 源码工作区 -->
+    <section class="pane editor-pane" id="editorPane">
+      <div class="pane-toolbar">
+        <div class="pane-title-group">
+          <div class="mode-switch" id="editorModeSwitch" role="tablist">
+            <button type="button" class="mode-tab active" data-mode="composer" role="tab">🧩 拖拽拼装</button>
+            <button type="button" class="mode-tab" data-mode="code" role="tab">&lt;/&gt; LaTeX 源码</button>
+          </div>
+          <div class="pkg-pills" id="detectedPills"></div>
+        </div>
+        <div class="editor-actions hidden" id="editorActionsBar">
+          <button class="chip-btn" id="wrapCeBtn" title="用 \ce{...} 包裹选中文本或光标处">\ce{}</button>
+          <button class="chip-btn" id="wrapChemfigBtn" title="用 \chemfig{...} 包裹选中文本或光标处">\chemfig{}</button>
+          <button class="chip-btn" id="wrapSchemeBtn" title="用 \schemestart ... \schemestop 包裹">\schemestart</button>
+          <span class="v-sep"></span>
+          <button class="chip-btn" id="formatCodeBtn" title="按反应步和支链换行缩进（保留 TeX %）">格式化</button>
+          <button class="chip-btn" id="minifyCodeBtn" title="合并为单行以便复制入标注库">单行</button>
+          <button class="chip-btn" id="toggleAromaticBtn" title="在凯库勒苯环 *6(-=-=-=) 与圆圈苯环 **6(------) 间切换">苯环切换</button>
+          <span class="v-sep"></span>
+          <button class="chip-btn" id="undoBtn" title="撤销 (Ctrl+Z)">撤销</button>
+          <button class="chip-btn" id="redoBtn" title="重做 (Ctrl+Y)">重做</button>
+          <button class="chip-btn" id="saveFavBtn" title="将当前代码保存到我的收藏">☆ 收藏</button>
+          <button class="chip-btn" id="clearCodeBtn" title="清空编辑区">清空</button>
+          <button class="chip-btn accent" id="layoutToggleBtn" title="展开/收起 chemfig 排版微调参数">排版参数 ▾</button>
+        </div>
+      </div>
+
+      <!-- 拖拽拼装视图（默认主视图） -->
+      <div class="composer-view" id="composerView">
+        <div class="cmp-toolbar">
+          <div class="cmp-layout-switch">
+            <button type="button" class="chip-btn active" id="cmpFlowBtn" title="按反应流程横向排列、换行接续">反应流</button>
+            <button type="button" class="chip-btn" id="cmpFreeBtn" title="自由摆放位置并用虚线/箭头连接">自由画布</button>
+          </div>
+          <div class="cmp-palette" id="cmpPalette"></div>
+          <div class="cmp-right-tools">
+            <button type="button" class="mini-pill" id="cmpPresetHydration" title="载入有机反应流示例">示例：丙烯水合</button>
+            <button type="button" class="mini-pill" id="cmpPresetHBond" title="载入自由定位+氢键虚线示例">示例：氢键</button>
+            <button type="button" class="chip-btn" id="cmpUndoBtn" title="撤销拼装操作">撤销</button>
+            <button type="button" class="chip-btn" id="cmpClearBtn" title="清空拼装画布">清空</button>
+            <button type="button" class="chip-btn accent" id="cmpSwitchCodeBtn" title="切到源码模式精修生成的 LaTeX">源码精修</button>
+          </div>
+        </div>
+
+        <div class="cmp-conn-bar hidden" id="cmpConnBar">
+          <span>连线工具：</span>
+          <button type="button" class="chip-btn active" data-conn-style="">✋ 移动</button>
+          <button type="button" class="chip-btn" data-conn-style="dotted">··· 氢键虚线</button>
+          <button type="button" class="chip-btn" data-conn-style="arrow">→ 实线箭头</button>
+          <button type="button" class="chip-btn" data-conn-style="curved">↷ 弯箭头</button>
+          <button type="button" class="chip-btn" data-conn-style="solid">— 实线</button>
+          <button type="button" class="chip-btn" id="cmpAutoAlignBtn">自动排齐</button>
+          <span class="cmp-conn-tip">拖动积木自由定位；选中连线工具后依次点击两个积木连线</span>
+        </div>
+
+        <div class="cmp-canvas-shell">
+          <div class="cmp-canvas cmp-flow-stage" id="composerCanvas"></div>
+          <div class="cmp-popover hidden" id="cmpEditPopover" role="dialog">
+            <div class="cmp-pop-head">
+              <strong id="cmpPopoverTitle">编辑积木</strong>
+              <button type="button" class="icon-btn" id="cmpPopoverClose">✕</button>
+            </div>
+            <div class="cmp-pop-body" id="cmpPopoverBody"></div>
+            <div class="cmp-pop-foot">
+              <button type="button" class="chip-btn" id="cmpPopoverDelete">删除</button>
+              <button type="button" class="compile-now-btn" id="cmpPopoverSave">应用</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 源码精修视图 -->
+      <div class="code-view hidden" id="codeView">
+        <!-- 可折叠排版参数条 -->
+        <div class="layout-bar hidden" id="layoutBar">
+          <label>键长 (atom sep)
+            <input type="text" id="optAtomSep" placeholder="默认 3em" title="如 2.4em、3em、1.2cm" />
+          </label>
+          <label>键距 (bond offset)
+            <input type="text" id="optBondOffset" placeholder="默认 2pt" title="如 1.5pt、2pt" />
+          </label>
+          <label>双键间距
+            <input type="text" id="optDoubleSep" placeholder="默认 2pt" title="如 2pt、2.8pt" />
+          </label>
+          <label>字号
+            <select id="optFontSize">
+              <option value="small">\small</option>
+              <option value="normalsize" selected>\normalsize</option>
+              <option value="large">\large</option>
+              <option value="Large">\Large</option>
+            </select>
+          </label>
+          <button class="chip-btn" id="resetOptsBtn" title="恢复默认排版参数">重置参数</button>
+          <button class="chip-btn" id="togglePreambleBtn" title="添加自定义导言区宏包或命令">导言区</button>
+        </div>
+        <div class="preamble-bar hidden" id="preambleBar">
+          <input type="text" id="optPreamble" placeholder="可选附加导言区命令（例如 \usetikzlibrary{calc} 或 \setchemfig{cram width=3pt}）" />
+        </div>
+
+        <!-- 带行号 + 语法与括号高亮代码输入区 -->
+        <div class="code-box">
+          <div class="line-numbers" id="lineNumbers" aria-hidden="true">1</div>
+          <div class="code-stage" id="codeStage">
+            <pre class="code-highlight" id="codeHighlight" aria-hidden="true"></pre>
+            <textarea
+              id="codeEditor"
+              spellcheck="false"
+              autocomplete="off"
+              autocapitalize="off"
+              placeholder="在此输入 mhchem (\ce{...})、chemfig (\chemfig{...}) 或 TikZ 化学代码，输入 \ 可唤起命令补全..."
+            ></textarea>
+          </div>
+          <div class="ac-popup hidden" id="acPopup" role="listbox" aria-label="LaTeX 命令补全"></div>
+        </div>
+
+        <!-- 编辑区底部状态 & 角度/长度微调条 -->
+        <div class="nudge-bar hidden" id="nudgeBar">
+          <span class="nudge-label" id="nudgeLabel">角度</span>
+          <button class="chip-btn nudge-btn" data-delta="-15">-15</button>
+          <button class="chip-btn nudge-btn" data-delta="-5">-5</button>
+          <button class="chip-btn nudge-btn" data-delta="5">+5</button>
+          <button class="chip-btn nudge-btn" data-delta="15">+15</button>
+          <span class="nudge-hint"><kbd>Alt</kbd>+<kbd>↑/↓</kbd> 微调（按住 <kbd>Shift</kbd> 更精细）</span>
+        </div>
+        <div class="editor-footer">
+          <div class="editor-hints">
+            <span id="cursorPos">行 1, 列 1</span>
+            <span class="ctx-pill" id="cursorCtx">顶层位置 · 点击符号自动包裹</span>
+            <span class="bracket-status ok" id="bracketStatus">括号配对正常</span>
+          </div>
+          <div class="editor-shortcuts">
+            <span><kbd>Ctrl</kbd>+<kbd>Enter</kbd> 立即渲染</span>
+            <span><kbd>\</kbd> 补全</span>
+            <button class="compile-now-btn" id="compileNowBtn">立即渲染</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 可拖拽分隔条 -->
+    <div class="resizer" id="paneResizer" role="separator" aria-orientation="vertical" title="拖动调节左右栏宽度"></div>
+
+    <!-- 右侧：实时矢量预览区 -->
+    <section class="pane preview-pane" id="previewPane">
+      <div class="pane-toolbar">
+        <div class="pane-title-group">
+          <span class="pane-label">实时矢量预览</span>
+          <span class="render-badge idle" id="renderBadge">就绪</span>
+          <span class="dim-badge" id="dimBadge"></span>
+        </div>
+        <div class="preview-controls">
+          <div class="bg-switcher" role="group" aria-label="画布背景">
+            <button class="bg-btn active" data-bg="grid" title="浅色细网格">网格</button>
+            <button class="bg-btn" data-bg="white" title="纯白底">纯白</button>
+            <button class="bg-btn" data-bg="checker" title="透明棋盘格">透明</button>
+            <button class="bg-btn" data-bg="dark" title="深色反色查看">暗底</button>
+          </div>
+          <span class="v-sep"></span>
+          <button class="chip-btn" id="zoomOutBtn" title="缩小">−</button>
+          <span class="zoom-label" id="zoomLabel">125%</span>
+          <button class="chip-btn" id="zoomInBtn" title="放大">+</button>
+          <button class="chip-btn" id="zoomFitBtn" title="适应画布并复位平移（也可双击画布复位）">复位</button>
+        </div>
+      </div>
+
+      <!-- SVG 预览舞台（支持拖拽平移 + Ctrl+滚轮缩放 + 双击复位） -->
+      <div class="preview-stage bg-grid" id="previewStage" title="按住左键拖拽平移 · Ctrl+滚轮缩放 · 双击复位视图">
+        <div class="svg-viewport" id="svgViewport">
+          <div class="svg-holder" id="svgHolder"></div>
+        </div>
+
+        <!-- 编译错误诊断浮动卡片 -->
+        <div class="error-card hidden" id="errorCard" role="alert">
+          <div class="error-card-head">
+            <strong>编译错误诊断</strong>
+            <div class="error-card-actions">
+              <button class="chip-btn" id="toggleLastValidBtn">查看上次成功预览</button>
+              <button class="chip-btn" id="dismissErrorBtn">关闭</button>
+            </div>
+          </div>
+          <p class="error-msg" id="errorMsg"></p>
+          <p class="error-hint" id="errorHint"></p>
+          <details class="error-log-details">
+            <summary>查看 Tectonic 原始日志</summary>
+            <pre id="errorRawLog"></pre>
+          </details>
+        </div>
+      </div>
+
+      <!-- LaTeXLive 风格多格式导出栏 -->
+      <div class="export-bar">
+        <div class="export-group">
+          <button class="exp-btn primary" id="copyLatexBtn" title="复制原始 LaTeX 代码">复制 LaTeX</button>
+          <button class="exp-btn" id="copyMdBtn" title="复制 Markdown 数学格式 ($...$)">复制 Markdown</button>
+          <button class="exp-btn" id="copySvgBtn" title="复制 SVG 矢量源码">复制 SVG</button>
+          <button class="exp-btn" id="copyPngBtn" title="直接复制高清 PNG 图片到剪贴板，可粘贴到 Word/PPT">复制 PNG 图片</button>
+        </div>
+        <div class="export-group">
+          <button class="exp-btn" id="dlSvgBtn">下载 SVG</button>
+          <div class="png-split">
+            <button class="exp-btn" id="dlPngBtn">下载 PNG</button>
+            <select id="pngScaleSelect" title="PNG 分辨率倍率">
+              <option value="2">2x</option>
+              <option value="3" selected>3x</option>
+              <option value="4">4x</option>
+              <option value="6">6x</option>
+            </select>
+            <label class="png-alpha-chk" title="勾选导出透明背景 PNG">
+              <input type="checkbox" id="pngTransparentChk" /> 透明
+            </label>
+          </div>
+          <button class="exp-btn" id="dlPdfBtn">下载 PDF</button>
+          <button class="exp-btn" id="dlTexBtn">下载 .tex</button>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- 底部可折叠抽屉：公式模板库 + 常见分子结构库 + 我的收藏 -->
+  <section class="library-dock collapsed" id="libraryDock">
+    <div class="lib-drawer-resizer" id="libDrawerResizer" role="separator" aria-orientation="horizontal" title="拖动调节模板抽屉高度"></div>
+    <div class="library-toolbar">
+      <div class="lib-mode-tabs" role="tablist">
+        <button class="lib-tab active" data-lib="formulas">公式与反应模板 <span class="lib-count" id="formulaCount">0</span></button>
+        <button class="lib-tab" data-lib="molecules">常见分子结构 <span class="lib-count" id="moleculeCount">0</span></button>
+        <button class="lib-tab" data-lib="favorites">我的收藏 <span class="lib-count" id="favTabCount">0</span></button>
+      </div>
+
+      <div class="lib-search-wrap">
+        <input type="search" id="libSearchInput" placeholder="搜索或展开模板库（如 苯酚、能斯特、SN2、椅式）..." />
+      </div>
+
+      <div class="lib-right-tools">
+        <button class="chip-btn hidden" id="expandLibBtn" title="切换半屏高度浏览">半屏 ⤢</button>
+        <button class="chip-btn accent" id="toggleLibBarBtn" title="展开或收起模板抽屉">展开模板抽屉 ▲</button>
+      </div>
+    </div>
+
+    <div class="lib-categories" id="libCategories"></div>
+
+    <div class="lib-grid" id="libGrid"></div>
+  </section>
+
+  <!-- 2D 分子可视化画板弹窗 -->
+  <div class="modal-backdrop hidden" id="sketchModal" role="dialog" aria-modal="true" aria-labelledby="sketchModalTitle">
+    <div class="modal-card xl">
+      <div class="modal-head">
+        <h2 id="sketchModalTitle">2D 分子结构画板（直接生成原生 chemfig）</h2>
+        <div class="sketch-head-actions">
+          <span class="sketch-preset-lbl">示例：</span>
+          <button class="mini-pill" data-skpreset="phenol_circle">圆圈苯酚</button>
+          <button class="mini-pill" data-skpreset="benzene_k">凯库勒苯</button>
+          <button class="mini-pill" data-skpreset="citric">柠檬酸</button>
+          <button class="icon-btn modal-close" data-close="sketchModal">✕</button>
+        </div>
+      </div>
+      <div class="modal-body sketch-layout">
+        <div class="sketch-left">
+          <div class="sketch-toolbar">
+            <div class="sk-tool-group">
+              <button class="sk-tool-btn" data-sktool="select" title="选择/拖拽原子（拖空白平移，按住 Shift 自由角度长度，Esc 切换）">选择/移动</button>
+              <button class="sk-tool-btn active" data-sktool="single" title="拖出单键；点击已有键改为单键（1）。按住 Shift 可自由调整落点。">— 单键</button>
+              <button class="sk-tool-btn" data-sktool="double" title="拖出双键；点击已有键改为双键（2）">= 双键</button>
+              <button class="sk-tool-btn" data-sktool="triple" title="拖出三键；点击已有键改为三键（3）">≡ 三键</button>
+              <button class="sk-tool-btn" data-sktool="wedge" title="实楔形键（再次点击翻转方向）">▶ 实楔</button>
+              <button class="sk-tool-btn" data-sktool="dash" title="虚楔形键（再次点击翻转方向）">┆ 虚楔</button>
+              <button class="sk-tool-btn" data-sktool="dotted" title="氢键/分子间虚线">··· 虚线</button>
+              <button class="sk-tool-btn" data-sktool="erase" title="橡皮擦：点击原子或键删除（也可直接右键删除）">橡皮擦</button>
+              <span class="sk-sep" aria-hidden="true"></span>
+              <button class="sk-tool-btn sk-ring-tool" data-sktool="ring_benzene_c" title="圆圈苯环 (**6) — 可点击放置或按住拖到画布/键上磁吸并环">◎ 圆圈苯</button>
+              <button class="sk-tool-btn sk-ring-tool" data-sktool="ring_benzene_k" title="凯库勒苯环 (*6) — 可点击放置或按住拖到画布/键上磁吸并环">⬡ 交替苯</button>
+              <button class="sk-tool-btn sk-ring-tool" data-sktool="ring_6" title="六元环 (*6) — 可点击放置或按住拖到画布/键上磁吸并环">⬡ 六元环</button>
+              <button class="sk-tool-btn sk-ring-tool" data-sktool="ring_5" title="五元环 (*5) — 可点击放置或按住拖到画布/键上磁吸并环">⬠ 五元环</button>
+              <button class="sk-tool-btn sk-ring-tool" data-sktool="ring_4" title="四元环 (*4) — 可点击放置或按住拖到画布/键上磁吸并环">□ 四元环</button>
+              <button class="sk-tool-btn sk-ring-tool" data-sktool="ring_3" title="三元环 (*3) — 可点击放置或按住拖到画布/键上磁吸并环">△ 三元环</button>
+            </div>
+            <div class="sk-palette-row">
+              <span class="sk-pal-lbl">原子/基团(可点选或拖入)：</span>
+              <div class="sk-palette" id="sketchUnifiedPalette"></div>
+              <div class="sk-custom-atom">
+                <input type="text" id="sketchCustomAtomInput" placeholder="自定义如 Boc" />
+                <button class="chip-btn" id="sketchApplyCustomAtomBtn">应用</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="sketch-canvas-wrap">
+            <svg id="sketchSvg" viewBox="0 0 600 400" preserveAspectRatio="xMidYMid meet"></svg>
+            <input type="text" id="sketchInlineInput" class="sk-inline-input hidden" placeholder="原子/基团" spellcheck="false" autocomplete="off" />
+          </div>
+
+          <div class="sketch-bottom-bar">
+            <div class="sk-transform-btns">
+              <button class="chip-btn" id="sketchUndoBtn">撤销</button>
+              <button class="chip-btn" id="sketchRedoBtn">重做</button>
+              <label class="sk-rotate-field" for="sketchRotateAngle">角度
+                <input type="number" id="sketchRotateAngle" value="22.5" step="0.1" />°
+              </label>
+              <button class="chip-btn" id="sketchRotateApplyBtn" title="按输入角度任意旋转；正值顺时针">旋转</button>
+              <button class="chip-btn" id="sketchRotLeftBtn">↺ -15°</button>
+              <button class="chip-btn" id="sketchRotRightBtn">↻ +15°</button>
+              <button class="chip-btn" id="sketchFlipHBtn">⇄ 水平翻转</button>
+              <button class="chip-btn" id="sketchCenterBtn">⊞ 居中</button>
+              <button class="chip-btn" id="sketchClearBtn">清空画板</button>
+            </div>
+            <span class="sk-tip" id="sketchToolHint"></span>
+          </div>
+        </div>
+
+        <div class="sketch-right">
+          <div class="sk-opt-row">
+            <label title="关闭后画键和生成代码保留任意角度"><input type="checkbox" id="sketchOptSnap" checked /> 15° 角度吸附</label>
+            <label title="常规键长波动在 0.55~1.55 倍内省略冗长比例系数"><input type="checkbox" id="sketchOptUniform" checked /> 等长键</label>
+            <label><input type="checkbox" id="sketchOptShowC" /> 显式碳 (C)</label>
+            <label><input type="checkbox" id="sketchOptPretty" /> 多行格式化</label>
+          </div>
+          <label class="field-label">生成的 chemfig 代码（可直接微调）
+            <textarea id="sketchCodeOutput" rows="5" spellcheck="false"></textarea>
+          </label>
+          <div class="sk-preview-box">
+            <div class="sk-preview-head">
+              <span>Tectonic 编译实景对照</span>
+              <span class="dim-badge" id="sketchPreviewStatus">就绪</span>
+            </div>
+            <div class="sk-preview-stage" id="sketchPreviewSvg"></div>
+          </div>
+          <div class="modal-actions">
+            <button class="exp-btn" id="sketchInsertBtn">插入到光标处</button>
+            <button class="exp-btn primary" id="sketchLoadBtn">覆盖载入并渲染</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 图片 / 笔迹识图 (OCR) 弹窗 -->
+  <div class="modal-backdrop hidden" id="ocrModal" role="dialog" aria-modal="true" aria-labelledby="ocrModalTitle">
+    <div class="modal-card wide">
+      <div class="modal-head">
+        <h2 id="ocrModalTitle">手写图片 / 笔迹 JSON 识图 (MolVec + 预处理)</h2>
+        <button class="icon-btn modal-close" data-close="ocrModal">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="drop-zone" id="ocrDropZone" tabindex="0">
+          <p><strong>拖拽图片或笔迹 JSON 到此、点击选择文件，或按 <kbd>Ctrl</kbd>+<kbd>V</kbd> 粘贴截图</strong></p>
+          <p class="drop-sub">支持 PNG / JPG / TIFF / SVG 及标注台导出的 strokes .json（离线识别）</p>
+          <input type="file" id="ocrFileInput" accept=".png,.jpg,.jpeg,.tif,.tiff,.svg,.json,image/*" hidden />
+        </div>
+        <div class="ocr-controls">
+          <label>格式：
+            <select id="ocrTargetSelect">
+              <option value="chemfig" selected>chemfig 结构代码</option>
+              <option value="tikz">TikZ 矢量坐标</option>
+            </select>
+          </label>
+          <label>预处理：
+            <select id="ocrPreprocessSelect">
+              <option value="auto" selected>自动去底加粗（手写推荐）</option>
+              <option value="none">原图直传</option>
+            </select>
+          </label>
+          <label>笔迹加粗：
+            <select id="ocrThickenSelect">
+              <option value="0">不加粗</option>
+              <option value="1" selected>轻度加粗 (1px)</option>
+              <option value="2">中度加粗 (2px)</option>
+            </select>
+          </label>
+          <label>旋转 (°)：<input type="number" id="ocrRotateInput" value="0" step="15" /></label>
+          <label><input type="checkbox" id="ocrSnapChk" checked /> 15° 吸附</label>
+          <label><input type="checkbox" id="ocrCircleChk" /> 圆圈苯环</label>
+          <label><input type="checkbox" id="ocrShowCChk" /> 显式 C</label>
+          <label><input type="checkbox" id="ocrShowMeChk" /> 显式 CH₃</label>
+        </div>
+        <div class="ocr-preview-row hidden" id="ocrPreviewRow">
+          <div class="ocr-thumbs-col">
+            <img id="ocrThumb" alt="预处理后送识图图像" title="预处理后送入 MolVec 的图像" />
+            <div class="ocr-render-mini" id="ocrRenderMini" title="识别结果的 Tectonic 渲染预览"></div>
+          </div>
+          <div class="ocr-status-col">
+            <p id="ocrStatusText">正在识别...</p>
+            <textarea id="ocrOutput" rows="5" spellcheck="false" class="hidden"></textarea>
+            <div class="modal-actions hidden" id="ocrActions">
+              <button class="exp-btn" id="ocrInsertBtn">插入到光标处</button>
+              <button class="exp-btn primary" id="ocrLoadBtn">载入并渲染</button>
+            </div>
+          </div>
+        </div>
+        <p class="modal-error hidden" id="ocrError"></p>
+      </div>
+    </div>
+  </div>
+
+  <!-- 语法速查与防踩坑指南弹窗 -->
+  <div class="modal-backdrop hidden" id="guideModal" role="dialog" aria-modal="true" aria-labelledby="guideModalTitle">
+    <div class="modal-card wide">
+      <div class="modal-head">
+        <h2 id="guideModalTitle">chemfig · mhchem · TikZ 语法速查与避坑指南</h2>
+        <button class="icon-btn modal-close" data-close="guideModal">✕</button>
+      </div>
+      <div class="modal-body guide-grid">
+        <div class="guide-box">
+          <h3>1. chemfig 8 方位角度时钟图</h3>
+          <div class="compass-wrap">
+            <svg viewBox="0 0 220 220" width="200" height="200">
+              <circle cx="110" cy="110" r="68" fill="none" stroke="currentColor" stroke-opacity="0.2" stroke-dasharray="4 4"/>
+              <circle cx="110" cy="110" r="6" fill="var(--accent)"/>
+              <line x1="110" y1="110" x2="174" y2="110" stroke="var(--accent)" stroke-width="2"/>
+              <line x1="110" y1="110" x2="155" y2="65" stroke="currentColor" stroke-opacity="0.5" stroke-width="1.5"/>
+              <line x1="110" y1="110" x2="110" y2="46" stroke="var(--accent)" stroke-width="2"/>
+              <line x1="110" y1="110" x2="65" y2="65" stroke="currentColor" stroke-opacity="0.5" stroke-width="1.5"/>
+              <line x1="110" y1="110" x2="46" y2="110" stroke="var(--accent)" stroke-width="2"/>
+              <line x1="110" y1="110" x2="65" y2="155" stroke="currentColor" stroke-opacity="0.5" stroke-width="1.5"/>
+              <line x1="110" y1="110" x2="110" y2="174" stroke="var(--accent)" stroke-width="2"/>
+              <line x1="110" y1="110" x2="155" y2="155" stroke="currentColor" stroke-opacity="0.5" stroke-width="1.5"/>
+              <text x="184" y="114" font-size="12" fill="currentColor">[0] 0°</text>
+              <text x="158" y="57" font-size="12" fill="currentColor">[1] 45°</text>
+              <text x="93" y="34" font-size="12" fill="currentColor">[2] 90°</text>
+              <text x="20" y="57" font-size="12" fill="currentColor">[3] 135°</text>
+              <text x="4" y="114" font-size="12" fill="currentColor">[4] 180°</text>
+              <text x="18" y="172" font-size="12" fill="currentColor">[5] 225°</text>
+              <text x="89" y="196" font-size="12" fill="currentColor">[6] 270°</text>
+              <text x="158" y="172" font-size="12" fill="currentColor">[7] 315°</text>
+            </svg>
+            <p class="guide-note">键线式常用 <code>[:30]</code> 与 <code>[:-30]</code> 交替绘制标准 120° 锯齿链。</p>
+          </div>
+        </div>
+        <div class="guide-box">
+          <h3>2. 常见实战防踩坑准则</h3>
+          <ul class="guide-list">
+            <li><strong>隐式碳顶点切换键型要加括号</strong>：从折线隐式碳顶点连立体楔形键时，写成 <code>-[:135](&lt;:[2]OH)</code>，不要连写 <code>-[:135]&lt;:[2]OH</code>。</li>
+            <li><strong>苯环朝向与画法</strong>：<code>**6(------)</code> 为内切圆圈，<code>*6(-=-=-=)</code> 为凯库勒交替双键；前加 <code>[:30]</code> 让苯环上下尖顶竖向摆放。</li>
+            <li><strong>竖排多行主链防重叠</strong>：甘油三酯等带上下羰基的多行结构，给竖向主链设置键长倍率 <code>-[6,2.2]</code>。</li>
+            <li><strong>反应箭头中写数学符号</strong>：在 <code>\schemestart</code> 的 <code>\arrow{->[上][下]}</code> 内，温度 <code>\Delta</code> 等数学符号需写为 <code>[$\Delta$]</code>；而纯 <code>\ce{->[\Delta]}</code> 可直接识别。</li>
+          </ul>
+        </div>
+        <div class="guide-box full-span">
+          <h3>3. mhchem 与 chemfig 组合速查</h3>
+          <div class="cheat-table">
+            <div><code>\ce{H2SO4}</code> → 硫酸自动上下标</div>
+            <div><code>\ce{SO4^{2-}}</code> → 带多电荷离子</div>
+            <div><code>\ce{A + B &lt;=&gt;[条件] C ^}</code> → 可逆与气体</div>
+            <div><code>\chemfig{R-NH-R^{\prime}}</code> → 通式基团</div>
+            <div><code>\chemfig{H-[:0,1.4,,,dotted]O}</code> → 虚线氢键</div>
+            <div><code>\charge{90=\:}{O}</code> → 孤对电子点</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 历史与收藏侧边抽屉 -->
+  <aside class="drawer hidden" id="historyDrawer" aria-label="历史与收藏">
+    <div class="drawer-head">
+      <strong>历史记录与我的收藏</strong>
+      <button class="icon-btn" id="closeDrawerBtn">✕</button>
+    </div>
+    <div class="drawer-tabs">
+      <button class="drawer-tab active" data-dtab="history">最近编辑</button>
+      <button class="drawer-tab" data-dtab="favorites">已收藏片段</button>
+    </div>
+    <div class="drawer-list" id="drawerList"></div>
+    <div class="drawer-footer">
+      <button class="chip-btn" id="clearHistoryBtn">清空历史记录</button>
+    </div>
+  </aside>
+
+  <!-- 轻提示 Toast -->
+  <div class="toast-container" id="toastContainer" aria-live="polite"></div>
+
+  <script src="/static/composer.js?v=20261125-11"></script>
+  <script src="/static/sketcher.js?v=20261125-11"></script>
+  <script src="/static/app.js?v=20261125-11"></script>
+</body>
+</html>

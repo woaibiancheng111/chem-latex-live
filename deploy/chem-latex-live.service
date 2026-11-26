@@ -1,0 +1,43 @@
+[Unit]
+Description=ChemLaTeX Live
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=chem-latex-live
+Group=chem-latex-live
+WorkingDirectory=/opt/chem-latex-live/app
+ExecStart=/opt/chem-latex-live/venv/bin/python -m uvicorn chem_latex_live.server:app --host 127.0.0.1 --port 8765 --limit-concurrency 16 --timeout-keep-alive 4
+Environment=HOME=/var/lib/chem-latex-live XDG_CACHE_HOME=/var/cache/chem-latex-live
+Environment=CODEX_TECTONIC_PATH=/opt/chem-latex-live/bin/tectonic
+Environment=PYTHONDONTWRITEBYTECODE=1 OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1
+Environment="JAVA_TOOL_OPTIONS=-XX:ActiveProcessorCount=1 -Xmx128m"
+StateDirectory=chem-latex-live
+StateDirectoryMode=0750
+CacheDirectory=chem-latex-live
+CacheDirectoryMode=0750
+UMask=0077
+Restart=on-failure
+RestartSec=5s
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+PrivateDevices=yes
+PrivateTmp=yes
+ProtectHome=yes
+ProtectSystem=strict
+ProtectProc=invisible
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+RestrictNamespaces=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+InaccessiblePaths=-/etc/letsencrypt -/etc/ssh -/etc/nginx -/var/lib/docker -/var/lib/containerd -/opt/ai-knowledge-base -/opt/sub2api -/var/www
+LimitFSIZE=100M
+MemoryHigh=320M
+MemoryMax=560M
+TasksMax=48
+CPUQuota=70%
+
+[Install]
+WantedBy=multi-user.target
