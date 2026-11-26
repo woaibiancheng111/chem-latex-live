@@ -18,6 +18,8 @@ from typing import Any
 import pymupdf
 from PIL import Image, ImageChops
 
+_CJK_MAIN_FONT = "Microsoft YaHei" if os.name == "nt" else "Noto Sans CJK SC"
+
 KNOWN_TECTONIC_PATH = Path(
     r"C:\Program Files\WindowsApps\OpenAI.CodexPrimaryRuntime.v26-1119-907-0_26.1119.907.0_x64__3k8sg7r9htsxt\dependencies\native\tectonic\tectonic.exe"
 )
@@ -213,7 +215,7 @@ def build_tex_document(
         lines.extend(
             [
                 r"\usepackage{fontspec}",
-                r"\setmainfont{Microsoft YaHei}",
+                rf"\setmainfont{{{_CJK_MAIN_FONT}}}",
             ]
         )
 
@@ -741,7 +743,7 @@ def batch_compile_pages(
         lines.extend(
             [
                 r"\usepackage{fontspec}",
-                r"\setmainfont{Microsoft YaHei}",
+                rf"\setmainfont{{{_CJK_MAIN_FONT}}}",
             ]
         )
     lines.extend(
