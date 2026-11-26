@@ -8,9 +8,11 @@
     history: "chemlatex_history",
     favorites: "chemlatex_favorites",
     splitPct: "chemlatex_split_pct",
-    libOpen: "chemlatex_lib_open",
-    libHeight: "chemlatex_lib_height",
-    ribbonCollapsed: "chemlatex_ribbon_collapsed",
+    sidePanelTab: "chemlatex_side_tab",
+    sidePanelOpen: "chemlatex_side_open",
+    sidePanelWidth: "chemlatex_side_width",
+    wordWrap: "chemlatex_word_wrap",
+    previewBg: "chemlatex_preview_bg",
   };
 
   const DEFAULT_CODE =
@@ -62,10 +64,13 @@
       previews: {},
     },
     activeRibbonTab: "bonds",
+    symQuery: "",
     libMode: "formulas",
     libCategory: "all",
     libQuery: "",
-    drawerTab: "history",
+    sidePanelTab: "library",
+    sidePanelOpen: true,
+    wordWrap: true,
     zoom: 1.25,
     panX: 0,
     panY: 0,
@@ -91,21 +96,34 @@
     editorMode: "composer",
     composer: null,
     sketcher: null,
+    cmdItems: [],
+    cmdIndex: 0,
   };
 
   const $ = (id) => document.getElementById(id);
 
   const els = {
     themeToggleBtn: $("themeToggleBtn"),
-    ribbonShell: $("ribbonShell"),
+    themeIconUse: $("themeIconUse"),
+    sidePanel: $("sidePanel"),
+    sidePanelTitle: $("sidePanelTitle"),
+    sideResizer: $("sideResizer"),
+    railCollapseBtn: $("railCollapseBtn"),
+    sidePanelCloseBtn: $("sidePanelCloseBtn"),
     ribbonTabs: $("ribbonTabs"),
     ribbonBody: $("ribbonBody"),
-    ribbonToggleBtn: $("ribbonToggleBtn"),
+    symSearchInput: $("symSearchInput"),
+    favoritesList: $("favoritesList"),
+    panelSaveFavBtn: $("panelSaveFavBtn"),
     editorPane: $("editorPane"),
     editorModeSwitch: $("editorModeSwitch"),
     editorActionsBar: $("editorActionsBar"),
+    codeQuickStrip: $("codeQuickStrip"),
     composerView: $("composerView"),
     codeView: $("codeView"),
+    codeBox: $("codeBox"),
+    codeStage: $("codeStage"),
+    wordWrapBtn: $("wordWrapBtn"),
     previewPane: $("previewPane"),
     paneResizer: $("paneResizer"),
     codeEditor: $("codeEditor"),
@@ -148,12 +166,13 @@
     moleculeCount: $("moleculeCount"),
     favTabCount: $("favTabCount"),
     favCountBadge: $("favCountBadge"),
-    expandLibBtn: $("expandLibBtn"),
-    libraryDock: $("libraryDock"),
-    libDrawerResizer: $("libDrawerResizer"),
-    toggleLibDrawerBtn: $("toggleLibDrawerBtn"),
-    toggleLibBarBtn: $("toggleLibBarBtn"),
     libTotalBadge: $("libTotalBadge"),
+    libHoverPreview: $("libHoverPreview"),
+    cmdPaletteModal: $("cmdPaletteModal"),
+    cmdSearchInput: $("cmdSearchInput"),
+    cmdResults: $("cmdResults"),
+    openCmdPaletteBtn: $("openCmdPaletteBtn"),
+    openOcrBtn: $("openOcrBtn"),
     sketchModal: $("sketchModal"),
     ocrModal: $("ocrModal"),
     ocrDropZone: $("ocrDropZone"),
@@ -174,7 +193,6 @@
     ocrActions: $("ocrActions"),
     ocrError: $("ocrError"),
     guideModal: $("guideModal"),
-    historyDrawer: $("historyDrawer"),
     drawerList: $("drawerList"),
     toastContainer: $("toastContainer"),
   };
@@ -214,9 +232,106 @@
   }
 
   // -------------------- Theme & Split Pane --------------------
-  function applyTheme(theme) {
-    document.documentElement.setAttribute("data-theme", theme);
-    localStorage.setItem(STORAGE_KEYS.theme, theme);
+  function setPreviewBg(bg, { persist = true } = {}) {
+    const valid = ["grid", "white", "checker", "dark"].includes(bg) ? bg : "grid";
+    document.querySelectorAll(".bg-btn").forEach((b) => {
+      b.classList.toggle("active", b.dataset.bg === valid);
+    });
+    els.previewStage.className = `preview-stage bg-${valid}`;
+    if (persist) {
+      localStorage.setItem(STORAGE_KEYS.previewBg, valid);
+    }
+  }
+
+  function applyTheme(theme, { syncPreview = false } = {}) {
+    const next = theme === "dark" ? "dark" : "light";
+    document.documentElement.setAttribute("data-theme", next);
+    localStorage.setItem(STORAGE_KEYS.theme, next);
+    const useEl = els.themeIconUse?.querySelector("use");
+    if (useEl) {
+      useEl.setAttribute("href", next === "dark" ? "#ic-sun" : "#ic-moon");
+    }
+    if (syncPreview || !localStorage.getItem(STORAGE_KEYS.previewBg)) {
+      setPreviewBg(next === "dark" ? "dark" : "grid", { persist: syncPreview });
+    }
+  }
+
+  const SIDE_PANEL_TITLES = {
+    library: "模板与分子库",
+    symbols: "快捷化学符号",
+    favorites: "我的收藏",
+    history: "最近编辑",
+  };
+
+  function setSidePanel(tabName, { open = true, persist = true } = {}) {
+    const tab = SIDE_PANEL_TITLES[tabName] ? tabName : "library";
+    state.sidePanelTab = tab;
+    state.sidePanelOpen = Boolean(open);
+
+    document.querySelectorAll(".rail-btn[data-rail]").forEach((btn) => {
+      btn.classList.toggle("active", state.sidePanelOpen && btn.dataset.rail === tab);
+    });
+    els.railCollapseBtn?.classList.toggle("active", state.sidePanelOpen);
+    els.sidePanel?.classList.toggle("collapsed", !state.sidePanelOpen);
+    els.sideResizer?.classList.toggle("collapsed", !state.sidePanelOpen);
+
+    if (els.sidePanelTitle) {
+      els.sidePanelTitle.textContent = SIDE_PANEL_TITLES[tab];
+    }
+    document.querySelectorAll(".side-pane[data-panel]").forEach((pane) => {
+      pane.classList.toggle("hidden", pane.dataset.panel !== tab);
+    });
+
+    if (state.sidePanelOpen) {
+      if (tab === "favorites") renderFavoritesList();
+      if (tab === "history") renderHistoryList();
+    } else {
+      hideLibHoverPreview();
+    }
+
+    if (persist) {
+      localStorage.setItem(STORAGE_KEYS.sidePanelTab, state.sidePanelTab);
+      localStorage.setItem(STORAGE_KEYS.sidePanelOpen, state.sidePanelOpen ? "1" : "0");
+    }
+  }
+
+  function initSideResizer() {
+    const savedW = parseInt(localStorage.getItem(STORAGE_KEYS.sidePanelWidth) || "", 10);
+    if (Number.isFinite(savedW) && savedW >= 220 && savedW <= 440 && els.sidePanel) {
+      els.sidePanel.style.width = `${savedW}px`;
+    }
+    if (!els.sideResizer || !els.sidePanel) return;
+
+    let dragging = false;
+    let startX = 0;
+    let startW = 280;
+
+    els.sideResizer.addEventListener("mousedown", (e) => {
+      if (els.sidePanel.classList.contains("collapsed")) return;
+      e.preventDefault();
+      dragging = true;
+      startX = e.clientX;
+      startW = els.sidePanel.getBoundingClientRect().width;
+      els.sideResizer.classList.add("dragging");
+      document.body.style.cursor = "col-resize";
+    });
+
+    window.addEventListener("mousemove", (e) => {
+      if (!dragging) return;
+      const next = Math.max(220, Math.min(440, startW + (e.clientX - startX)));
+      els.sidePanel.style.width = `${Math.round(next)}px`;
+    });
+
+    window.addEventListener("mouseup", () => {
+      if (!dragging) return;
+      dragging = false;
+      els.sideResizer.classList.remove("dragging");
+      document.body.style.cursor = "";
+      localStorage.setItem(
+        STORAGE_KEYS.sidePanelWidth,
+        String(Math.round(els.sidePanel.getBoundingClientRect().width))
+      );
+    });
   }
 
   function initSplitResizer() {
@@ -322,12 +437,12 @@
     onCodeChanged({ triggerRender: true });
   }
 
-  function setEditorCode(newCode, { render = true, recordUndo = true } = {}) {
+  function setEditorCode(newCode, { render = true, immediate = false, recordUndo = true } = {}) {
     if (recordUndo) {
       pushUndoSnapshot();
     }
     els.codeEditor.value = newCode;
-    onCodeChanged({ triggerRender: render });
+    onCodeChanged({ triggerRender: render, immediate });
   }
 
   function insertAtCursor(snippet, selectText = "") {
@@ -492,6 +607,34 @@
     els.codeHighlight.innerHTML = htmlLines.join("");
     els.codeHighlight.scrollTop = els.codeEditor.scrollTop;
     els.codeHighlight.scrollLeft = els.codeEditor.scrollLeft;
+    syncLineNumberHeights();
+  }
+
+  function syncLineNumberHeights() {
+    if (!els.lineNumbers || !els.codeHighlight) return;
+    const lnRows = els.lineNumbers.children;
+    if (!state.wordWrap) {
+      for (let i = 0; i < lnRows.length; i++) {
+        lnRows[i].style.height = "21px";
+      }
+      return;
+    }
+    const codeLines = els.codeHighlight.children;
+    const n = Math.min(lnRows.length, codeLines.length);
+    for (let i = 0; i < n; i++) {
+      const h = codeLines[i].offsetHeight;
+      lnRows[i].style.height = `${h > 0 ? h : 21}px`;
+    }
+  }
+
+  function applyWordWrap(enabled, { persist = true } = {}) {
+    state.wordWrap = Boolean(enabled);
+    els.codeBox?.classList.toggle("word-wrap", state.wordWrap);
+    els.wordWrapBtn?.classList.toggle("active", state.wordWrap);
+    if (persist) {
+      localStorage.setItem(STORAGE_KEYS.wordWrap, state.wordWrap ? "1" : "0");
+    }
+    requestAnimationFrame(syncLineNumberHeights);
   }
 
   function updateLineNumbers() {
@@ -503,6 +646,7 @@
     }
     els.lineNumbers.innerHTML = rows.join("");
     els.lineNumbers.scrollTop = els.codeEditor.scrollTop;
+    syncLineNumberHeights();
   }
 
   function jumpToLine(lineNo) {
@@ -966,25 +1110,32 @@
     els.cursorPos.textContent = `行 ${row}, 列 ${col}`;
 
     const ctx = detectCursorContext(val, pos);
-    let label = "顶层位置 · 点击符号自动包裹";
+    let label = "顶层位置";
+    let tip = "顶层位置 · 点击符号自动包裹";
     let inside = false;
     if (ctx.inChemfig) {
-      label = "位于 \\chemfig{} 内 · 直接拼接";
+      label = "\\chemfig{} 内";
+      tip = "位于 \\chemfig{} 内 · 点击化学键/方位将直接拼接";
       inside = true;
     } else if (ctx.inCe) {
-      label = "位于 \\ce{} 内 · 直接拼接";
+      label = "\\ce{} 内";
+      tip = "位于 \\ce{} 内 · 点击直接拼接";
       inside = true;
     } else if (ctx.inScheme) {
-      label = "位于 \\schemestart 内 · 直接拼接";
+      label = "\\schemestart 内";
+      tip = "位于 \\schemestart 内 · 直接拼接反应物与箭头";
       inside = true;
     } else if (ctx.inTikz) {
-      label = "位于 tikzpicture 内 · 直接拼接";
+      label = "tikzpicture 内";
+      tip = "位于 tikzpicture 内 · 直接拼接 TikZ 语句";
       inside = true;
     } else if (ctx.inMath) {
-      label = "位于数学环境内 · 直接拼接";
+      label = "数学环境内";
+      tip = "位于数学环境内 · 直接拼接";
       inside = true;
     }
     els.cursorCtx.textContent = label;
+    els.cursorCtx.title = tip;
     els.cursorCtx.className = `ctx-pill${inside ? " inside" : ""}`;
     updateNudgeBar();
     renderCodeHighlight();
@@ -993,13 +1144,13 @@
   function checkBrackets(code) {
     const { badSet, unclosedCount } = analyzeBrackets(code, 0);
     if (badSet.size === 0) {
-      els.bracketStatus.textContent = "括号配对正常";
+      els.bracketStatus.textContent = "括号正常";
       els.bracketStatus.className = "bracket-status ok";
     } else if (unclosedCount > 0) {
-      els.bracketStatus.textContent = `存在未闭合括号 (${unclosedCount} 处)`;
+      els.bracketStatus.textContent = `未闭合 (${unclosedCount})`;
       els.bracketStatus.className = "bracket-status bad";
     } else {
-      els.bracketStatus.textContent = `括号不匹配 (${badSet.size} 处)`;
+      els.bracketStatus.textContent = `不匹配 (${badSet.size})`;
       els.bracketStatus.className = "bracket-status bad";
     }
   }
@@ -1021,7 +1172,7 @@
     });
   }
 
-  function onCodeChanged({ triggerRender = true } = {}) {
+  function onCodeChanged({ triggerRender = true, immediate = false } = {}) {
     const code = els.codeEditor.value;
     localStorage.setItem(STORAGE_KEYS.code, code);
     if (!triggerRender || !code.trim()) {
@@ -1032,7 +1183,7 @@
     checkBrackets(code);
     updateDetectedPills(code);
     if (triggerRender) {
-      scheduleRender();
+      scheduleRender(immediate);
     }
   }
 
@@ -1184,7 +1335,7 @@
 
     els.previewStage.addEventListener("mousedown", (e) => {
       if (e.button !== 0) return;
-      if (e.target.closest("#errorCard")) return;
+      if (e.target.closest("#errorCard, .preview-hud")) return;
       panning = true;
       startX = e.clientX;
       startY = e.clientY;
@@ -1207,7 +1358,7 @@
     });
 
     els.previewStage.addEventListener("dblclick", (e) => {
-      if (e.target.closest("#errorCard")) return;
+      if (e.target.closest("#errorCard, .preview-hud")) return;
       resetPanAndFit();
     });
   }
@@ -1335,11 +1486,54 @@
   }
 
   // -------------------- Symbol Ribbon --------------------
+  // -------------------- Symbol Panel & Quick Strip --------------------
+  const QUICK_STRIP_PRESETS = [
+    { label: "—", sub: "单键", short: "—", title: "chemfig 单键 (-)", snippet: "-", container: "chemfig" },
+    { label: "=", sub: "双键", short: "=", title: "chemfig 双键 (=)", snippet: "=", container: "chemfig" },
+    { label: "≡", sub: "三键", short: "≡", title: "chemfig 三键 (~)", snippet: "~", container: "chemfig" },
+    { label: "▶", sub: "实楔", short: "▶", title: "实楔形键 (>)", snippet: ">", container: "chemfig" },
+    { label: "┆", sub: "虚楔", short: "┆", title: "虚楔形键 (<:)", snippet: "<:", container: "chemfig" },
+    { label: "[:30]", sub: "+30°", short: "[:30]", title: "键线常用 +30°", snippet: "[:30]", standalone: "-[:30]", container: "chemfig" },
+    { label: "[:-30]", sub: "-30°", short: "[:-30]", title: "键线常用 -30°", snippet: "[:-30]", standalone: "-[:-30]", container: "chemfig" },
+    { label: "◎", sub: "苯环", short: "◎ 苯环", title: "内切圆圈苯环 (**6)", snippet: "**6(------)", container: "chemfig" },
+    { label: "\\arrow", sub: "箭头", short: "\\arrow", title: "反应条件箭头", snippet: "\\arrow{->[条件][]}", select: "条件", container: "scheme" },
+  ];
+
+  function renderCodeQuickStrip() {
+    if (!els.codeQuickStrip) return;
+    els.codeQuickStrip.innerHTML = "";
+    const itemsWrap = document.createElement("div");
+    itemsWrap.className = "qstrip-items";
+    QUICK_STRIP_PRESETS.forEach((item) => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "qstrip-btn";
+      btn.textContent = item.short || item.label;
+      btn.title = `${item.title}\n插入：${item.snippet}`;
+      btn.addEventListener("click", () => insertRibbonItem(item));
+      itemsWrap.appendChild(btn);
+    });
+    els.codeQuickStrip.appendChild(itemsWrap);
+
+    const moreBtn = document.createElement("button");
+    moreBtn.type = "button";
+    moreBtn.className = "qstrip-btn qstrip-more";
+    moreBtn.id = "openSymbolsFromStripBtn";
+    moreBtn.textContent = "全部符号 ▸";
+    moreBtn.title = "在左侧面板打开完整化学符号与命令库";
+    moreBtn.addEventListener("click", () => setSidePanel("symbols", { open: true }));
+    els.codeQuickStrip.appendChild(moreBtn);
+  }
+
   function renderRibbon() {
     const tabs = state.catalog.ribbon_tabs || [];
+    const q = (state.symQuery || "").trim().toLowerCase();
     els.ribbonTabs.innerHTML = "";
+    els.ribbonTabs.classList.toggle("hidden", Boolean(q));
+
     tabs.forEach((tab) => {
       const btn = document.createElement("button");
+      btn.type = "button";
       btn.className = `ribbon-tab${tab.id === state.activeRibbonTab ? " active" : ""}`;
       btn.textContent = tab.name;
       btn.setAttribute("role", "tab");
@@ -1350,11 +1544,45 @@
       els.ribbonTabs.appendChild(btn);
     });
 
-    const current = tabs.find((t) => t.id === state.activeRibbonTab) || tabs[0];
     els.ribbonBody.innerHTML = "";
-    if (!current) return;
+    const containerHintMap = {
+      chemfig: "（在 \\chemfig{} 外点击会自动包裹）",
+      ce: "（在 \\ce{} 外点击会自动包裹）",
+      scheme: "（在 \\schemestart 外点击会自动包裹）",
+      math: "（在公式环境外点击会自动包裹）",
+      tikz: "（在 tikzpicture 外点击会自动包裹）",
+      none: "",
+    };
 
-    current.groups.forEach((grp) => {
+    const groupsToRender = [];
+    if (q) {
+      tabs.forEach((t) => {
+        (t.groups || []).forEach((grp) => {
+          const matched = (grp.items || []).filter((it) => {
+            const hay = `${it.label || ""} ${it.sub || ""} ${it.title || ""} ${it.snippet || ""}`.toLowerCase();
+            return hay.includes(q);
+          });
+          if (matched.length > 0) {
+            groupsToRender.push({ title: `${t.name} · ${grp.title}`, items: matched });
+          }
+        });
+      });
+    } else {
+      const current = tabs.find((t) => t.id === state.activeRibbonTab) || tabs[0];
+      if (current) {
+        (current.groups || []).forEach((grp) => groupsToRender.push(grp));
+      }
+    }
+
+    if (groupsToRender.length === 0) {
+      const empty = document.createElement("div");
+      empty.className = "lib-empty";
+      empty.textContent = "未找到匹配的化学符号或命令";
+      els.ribbonBody.appendChild(empty);
+      return;
+    }
+
+    groupsToRender.forEach((grp) => {
       const box = document.createElement("div");
       box.className = "ribbon-group";
       const title = document.createElement("div");
@@ -1366,15 +1594,8 @@
       itemsRow.className = "ribbon-items";
       grp.items.forEach((item) => {
         const btn = document.createElement("button");
+        btn.type = "button";
         btn.className = "sym-btn";
-        const containerHintMap = {
-          chemfig: "（在 \\chemfig{} 外点击会自动包裹）",
-          ce: "（在 \\ce{} 外点击会自动包裹）",
-          scheme: "（在 \\schemestart 外点击会自动包裹）",
-          math: "（在公式环境外点击会自动包裹）",
-          tikz: "（在 tikzpicture 外点击会自动包裹）",
-          none: "",
-        };
         const cHint = containerHintMap[item.container || "none"] || "";
         btn.title = `${item.title}${cHint}\n插入：${item.snippet}`;
         const main = document.createElement("span");
@@ -1411,15 +1632,14 @@
         packages: item.packages || [],
         keywords: item.keywords || "",
         code: item.code,
+        svg: (state.catalog.previews || {})[item.id] || item.svg || "",
       });
       toast(`已收藏：${item.name}`);
     }
     saveJsonStorage(STORAGE_KEYS.favorites, state.favorites);
     updateFavCounts();
     renderLibrary();
-    if (!els.historyDrawer.classList.contains("hidden")) {
-      renderDrawer();
-    }
+    renderFavoritesList();
   }
 
   function saveCurrentAsFavorite() {
@@ -1439,21 +1659,71 @@
     saveJsonStorage(STORAGE_KEYS.favorites, state.favorites);
     updateFavCounts();
     renderLibrary();
+    renderFavoritesList();
     toast("已将当前代码保存到“我的收藏”");
   }
 
   function updateFavCounts() {
-    els.favTabCount.textContent = String(state.favorites.length);
-    els.favCountBadge.textContent = String(state.favorites.length);
+    const n = state.favorites.length;
+    if (els.favTabCount) els.favTabCount.textContent = String(n);
+    if (els.favCountBadge) {
+      els.favCountBadge.textContent = String(n);
+      els.favCountBadge.classList.toggle("hidden", n === 0);
+    }
+  }
+
+  let hoverTimer = null;
+  function hideLibHoverPreview() {
+    if (hoverTimer) {
+      clearTimeout(hoverTimer);
+      hoverTimer = null;
+    }
+    els.libHoverPreview?.classList.add("hidden");
+  }
+
+  function showLibHoverPreview(cardEl, item) {
+    if (!els.libHoverPreview || !cardEl) return;
+    const svg = (state.catalog.previews || {})[item.id] || item.svg || "";
+    if (!svg && !item.code) return;
+    const scope = window.scopeSvgIds || ((s) => s);
+    els.libHoverPreview.innerHTML = `
+      ${svg ? `<div class="lib-hover-preview-svg">${scope(svg)}</div>` : ""}
+      <div class="lib-hover-preview-title">${escapeHtml(item.name || "")}</div>
+      ${item.subtitle ? `<div class="lib-hover-preview-sub">${escapeHtml(item.subtitle)}</div>` : ""}
+      <pre class="lib-hover-preview-code">${escapeHtml(item.code || "")}</pre>
+    `;
+    els.libHoverPreview.classList.remove("hidden");
+
+    const rect = cardEl.getBoundingClientRect();
+    const popW = 300;
+    const popH = Math.min(340, els.libHoverPreview.offsetHeight || 240);
+    let left = rect.right + 10;
+    if (left + popW > window.innerWidth - 12) {
+      left = Math.max(12, rect.left - popW - 10);
+    }
+    let top = rect.top;
+    if (top + popH > window.innerHeight - 12) {
+      top = Math.max(52, window.innerHeight - popH - 12);
+    }
+    els.libHoverPreview.style.left = `${left}px`;
+    els.libHoverPreview.style.top = `${top}px`;
+  }
+
+  function attachCardHover(card, item) {
+    card.addEventListener("mouseenter", () => {
+      if (hoverTimer) clearTimeout(hoverTimer);
+      hoverTimer = setTimeout(() => showLibHoverPreview(card, item), 180);
+    });
+    card.addEventListener("mouseleave", hideLibHoverPreview);
+    card.addEventListener("dragstart", hideLibHoverPreview);
+    card.addEventListener("mousedown", hideLibHoverPreview);
   }
 
   function renderLibrary() {
     const cats =
-      state.libMode === "formulas"
-        ? state.catalog.formula_categories
-        : state.libMode === "molecules"
-          ? state.catalog.molecule_categories
-          : [{ id: "all", name: "全部收藏" }];
+      state.libMode === "molecules"
+        ? state.catalog.molecule_categories
+        : state.catalog.formula_categories;
 
     if (!cats.some((c) => c.id === state.libCategory)) {
       state.libCategory = "all";
@@ -1462,6 +1732,7 @@
     els.libCategories.innerHTML = "";
     cats.forEach((cat) => {
       const btn = document.createElement("button");
+      btn.type = "button";
       btn.className = `cat-pill${cat.id === state.libCategory ? " active" : ""}`;
       btn.textContent = cat.name;
       btn.addEventListener("click", () => {
@@ -1472,11 +1743,9 @@
     });
 
     const sourceList =
-      state.libMode === "formulas"
-        ? state.catalog.formula_templates
-        : state.libMode === "molecules"
-          ? state.catalog.molecule_library
-          : state.favorites;
+      state.libMode === "molecules"
+        ? state.catalog.molecule_library
+        : state.catalog.formula_templates;
 
     const q = state.libQuery.trim().toLowerCase();
     const filtered = sourceList.filter((item) => {
@@ -1492,10 +1761,7 @@
     if (filtered.length === 0) {
       const empty = document.createElement("div");
       empty.className = "lib-empty";
-      empty.textContent =
-        state.libMode === "favorites"
-          ? "暂无收藏。点击任意卡片右上角 ☆ 或编辑区“☆ 收藏”即可保存。"
-          : "没有匹配的化学模板或分子结构，试试换个关键词。";
+      empty.textContent = "没有匹配的化学模板或分子结构，试试换个关键词。";
       els.libGrid.appendChild(empty);
       return;
     }
@@ -1524,10 +1790,12 @@
         );
       });
 
+      const faved = isFavorite(item.id);
       const actions = document.createElement("div");
-      actions.className = "lib-card-actions";
+      actions.className = `lib-card-actions${faved ? " has-fav" : ""}`;
 
       const insertBtn = document.createElement("button");
+      insertBtn.type = "button";
       insertBtn.className = "card-mini-btn";
       insertBtn.textContent = "+";
       insertBtn.title = state.editorMode === "composer" ? "添加到拼装画布" : "插入到光标位置（不覆盖已有代码）";
@@ -1543,7 +1811,7 @@
       });
 
       const favBtn = document.createElement("button");
-      const faved = isFavorite(item.id);
+      favBtn.type = "button";
       favBtn.className = `card-mini-btn fav${faved ? " active" : ""}`;
       favBtn.textContent = faved ? "★" : "☆";
       favBtn.title = faved ? "取消收藏" : "加入收藏";
@@ -1594,17 +1862,98 @@
           state.composer.addBlockFromLibrary(item);
           toast(`已加入拼装画布：${item.name}`);
         } else {
-          setEditorCode(item.code, { render: true, recordUndo: true });
+          setEditorCode(item.code, { render: true, immediate: true, recordUndo: true });
           toast(`已载入：${item.name}`);
         }
       });
 
+      attachCardHover(card, item);
       frag.appendChild(card);
     });
     els.libGrid.appendChild(frag);
   }
 
-  // -------------------- History & Drawer --------------------
+  function renderFavoritesList() {
+    if (!els.favoritesList) return;
+    els.favoritesList.innerHTML = "";
+    if (state.favorites.length === 0) {
+      const p = document.createElement("div");
+      p.className = "lib-empty";
+      p.textContent = "暂无收藏。点击模板卡片右上角 ☆ 或工具栏“收藏”即可保存。";
+      els.favoritesList.appendChild(p);
+      return;
+    }
+    const previews = state.catalog.previews || {};
+    const scope = window.scopeSvgIds || ((s) => s);
+    state.favorites.forEach((item) => {
+      const card = document.createElement("div");
+      card.className = "fav-card";
+
+      const actions = document.createElement("div");
+      actions.className = "lib-card-actions has-fav";
+
+      const addBtn = document.createElement("button");
+      addBtn.type = "button";
+      addBtn.className = "card-mini-btn";
+      addBtn.textContent = "+";
+      addBtn.title = state.editorMode === "composer" ? "作为积木加入画布" : "插入到光标位置";
+      addBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        if (state.editorMode === "composer" && state.composer) {
+          state.composer.addBlockFromLibrary(item);
+          toast(`已加入拼装画布：${item.name}`);
+        } else {
+          insertAtCursor(item.code);
+          toast(`已插入：${item.name}`);
+        }
+      });
+
+      const delBtn = document.createElement("button");
+      delBtn.type = "button";
+      delBtn.className = "card-mini-btn fav active";
+      delBtn.textContent = "★";
+      delBtn.title = "取消收藏";
+      delBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        toggleFavoriteItem(item);
+      });
+
+      actions.append(addBtn, delBtn);
+      card.appendChild(actions);
+
+      const svg = previews[item.id] || item.svg || "";
+      if (svg) {
+        const thumb = document.createElement("div");
+        thumb.className = "fav-card-thumb";
+        thumb.innerHTML = scope(svg);
+        card.appendChild(thumb);
+      }
+
+      const title = document.createElement("div");
+      title.className = "lib-card-title";
+      title.textContent = item.name || "已收藏片段";
+      card.appendChild(title);
+
+      const sub = document.createElement("div");
+      sub.className = "lib-card-sub";
+      sub.textContent = item.subtitle || "";
+      card.appendChild(sub);
+
+      card.addEventListener("click", () => {
+        if (state.editorMode === "composer" && state.composer) {
+          state.composer.addBlockFromLibrary(item);
+          toast(`已加入拼装画布：${item.name}`);
+        } else {
+          setEditorCode(item.code, { render: true, immediate: true, recordUndo: true });
+          toast(`已载入：${item.name}`);
+        }
+      });
+      attachCardHover(card, item);
+      els.favoritesList.appendChild(card);
+    });
+  }
+
+  // -------------------- History --------------------
   function recordHistory(code) {
     const trimmed = code.trim();
     if (!trimmed) return;
@@ -1618,46 +1967,231 @@
     });
     if (state.history.length > 30) state.history.length = 30;
     saveJsonStorage(STORAGE_KEYS.history, state.history);
-    if (!els.historyDrawer.classList.contains("hidden") && state.drawerTab === "history") {
-      renderDrawer();
+    if (state.sidePanelOpen && state.sidePanelTab === "history") {
+      renderHistoryList();
     }
   }
 
-  function renderDrawer() {
+  function renderHistoryList() {
+    if (!els.drawerList) return;
     els.drawerList.innerHTML = "";
-    const items = state.drawerTab === "history" ? state.history : state.favorites;
-    if (items.length === 0) {
+    if (state.history.length === 0) {
       const p = document.createElement("div");
       p.className = "lib-empty";
-      p.textContent = state.drawerTab === "history" ? "暂无最近编辑记录" : "暂无收藏片段";
+      p.textContent = "暂无最近编辑记录";
       els.drawerList.appendChild(p);
       return;
     }
-    items.forEach((item) => {
+    state.history.forEach((item) => {
       const div = document.createElement("div");
       div.className = "drawer-item";
       const top = document.createElement("div");
       top.className = "drawer-item-top";
-      top.innerHTML = `<span>${escapeHtml(item.name || "编辑记录")}</span><span>${escapeHtml(item.time || item.subtitle || "")}</span>`;
+      top.innerHTML = `<span>编辑记录</span><span class="mono-num">${escapeHtml(item.time || "")}</span>`;
       const pre = document.createElement("pre");
       pre.textContent = item.code;
       div.appendChild(top);
       div.appendChild(pre);
       div.addEventListener("click", () => {
-        setEditorCode(item.code, { render: true, recordUndo: true });
-        els.historyDrawer.classList.add("hidden");
+        setEditorCode(item.code, { render: true, immediate: true, recordUndo: true });
+        if (state.editorMode === "composer" && state.composer) {
+          state.composer.syncFromLatex(item.code);
+        }
+        toast("已恢复历史记录");
       });
       els.drawerList.appendChild(div);
     });
   }
 
-  // -------------------- Modals & OCR --------------------
+  // -------------------- Modals, Command Palette & OCR --------------------
   function openModal(modalEl) {
+    hideLibHoverPreview();
     modalEl.classList.remove("hidden");
   }
 
   function closeModal(modalEl) {
     modalEl.classList.add("hidden");
+  }
+
+  function openCmdPalette() {
+    if (!els.cmdPaletteModal) return;
+    openModal(els.cmdPaletteModal);
+    els.cmdSearchInput.value = "";
+    renderCmdResults("");
+    els.cmdSearchInput.focus();
+  }
+
+  function buildCommandCatalog() {
+    const cmds = [
+      {
+        kind: "命令",
+        title: "打开 2D 分子结构画板",
+        sub: "手绘苯环、官能团、楔形键",
+        keywords: "sketch 2d draw molecule 画板 分子",
+        run: () => $("openSketchBtn")?.click(),
+      },
+      {
+        kind: "命令",
+        title: "打开手写图片 / 笔迹 OCR 识图",
+        sub: "上传截图或粘贴图片转 chemfig",
+        keywords: "ocr image paste 识图 图片 手写",
+        run: () => openModal(els.ocrModal),
+      },
+      {
+        kind: "命令",
+        title: state.editorMode === "composer" ? "切换到 LaTeX 源码模式" : "切换到拖拽拼装画布",
+        sub: "双向实时同步",
+        keywords: "mode switch code composer 源码 拼装",
+        run: () => {
+          const target = state.editorMode === "composer" ? "code" : "composer";
+          els.editorModeSwitch.querySelector(`[data-mode="${target}"]`)?.click();
+        },
+      },
+      {
+        kind: "命令",
+        title: "切换浅色 / 深色主题",
+        sub: "Lab Glass & Ink",
+        keywords: "theme dark light 主题 暗色 浅色",
+        run: () => els.themeToggleBtn?.click(),
+      },
+      {
+        kind: "命令",
+        title: state.sidePanelOpen ? "收起左侧面板" : "展开左侧面板",
+        sub: "Ctrl+B",
+        keywords: "sidebar panel toggle 侧栏 折叠",
+        run: () => setSidePanel(state.sidePanelTab, { open: !state.sidePanelOpen }),
+      },
+      {
+        kind: "命令",
+        title: "打开语法速查与避坑指南",
+        sub: "chemfig 8 方位时钟图",
+        keywords: "guide help 语法 速查 帮助",
+        run: () => openModal(els.guideModal),
+      },
+      {
+        kind: "命令",
+        title: "载入示例：丙烯水合反应流",
+        sub: "有机反应框图",
+        keywords: "preset hydration 示例 丙烯水合",
+        run: () => {
+          if (state.editorMode !== "composer") {
+            els.editorModeSwitch.querySelector('[data-mode="composer"]')?.click();
+          }
+          state.composer?.loadPreset("hydration");
+        },
+      },
+      {
+        kind: "命令",
+        title: "载入示例：对羟基苯甲酸 · 氢键",
+        sub: "自由画布虚线连接",
+        keywords: "preset hbond 示例 氢键",
+        run: () => {
+          if (state.editorMode !== "composer") {
+            els.editorModeSwitch.querySelector('[data-mode="composer"]')?.click();
+          }
+          state.composer?.loadPreset("hbond");
+        },
+      },
+    ];
+
+    (state.catalog.formula_templates || []).forEach((item) => {
+      cmds.push({
+        kind: "公式模板",
+        title: item.name,
+        sub: item.subtitle || item.code,
+        keywords: `${item.name} ${item.subtitle || ""} ${item.keywords || ""} ${item.code}`,
+        run: () => {
+          if (state.editorMode === "composer" && state.composer) {
+            state.composer.addBlockFromLibrary(item);
+            toast(`已加入拼装画布：${item.name}`);
+          } else {
+            setEditorCode(item.code, { render: true, immediate: true, recordUndo: true });
+            toast(`已载入：${item.name}`);
+          }
+        },
+      });
+    });
+
+    (state.catalog.molecule_library || []).forEach((item) => {
+      cmds.push({
+        kind: "分子结构",
+        title: item.name,
+        sub: item.subtitle || item.code,
+        keywords: `${item.name} ${item.subtitle || ""} ${item.keywords || ""} ${item.code}`,
+        run: () => {
+          if (state.editorMode === "composer" && state.composer) {
+            state.composer.addBlockFromLibrary(item);
+            toast(`已加入拼装画布：${item.name}`);
+          } else {
+            setEditorCode(item.code, { render: true, immediate: true, recordUndo: true });
+            toast(`已载入：${item.name}`);
+          }
+        },
+      });
+    });
+
+    (state.catalog.ribbon_tabs || []).forEach((tab) => {
+      (tab.groups || []).forEach((grp) => {
+        (grp.items || []).forEach((item) => {
+          cmds.push({
+            kind: "符号",
+            title: `${item.label} ${item.sub || ""}`.trim(),
+            sub: item.snippet || "",
+            keywords: `${tab.name} ${grp.title} ${item.label} ${item.sub || ""} ${item.title || ""} ${item.snippet || ""}`,
+            run: () => insertRibbonItem(item),
+          });
+        });
+      });
+    });
+
+    return cmds;
+  }
+
+  function renderCmdResults(query) {
+    if (!els.cmdResults) return;
+    const q = query.trim().toLowerCase();
+    const all = buildCommandCatalog();
+    const list = q
+      ? all.filter((it) => it.keywords.toLowerCase().includes(q)).slice(0, 28)
+      : all.slice(0, 14);
+
+    state.cmdItems = list;
+    state.cmdIndex = 0;
+    els.cmdResults.innerHTML = "";
+
+    if (list.length === 0) {
+      const empty = document.createElement("div");
+      empty.className = "lib-empty";
+      empty.textContent = "没有匹配的结果，试试搜索 苯酚、能斯特、SN2、画板";
+      els.cmdResults.appendChild(empty);
+      return;
+    }
+
+    list.forEach((it, idx) => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = `cmd-item${idx === 0 ? " active" : ""}`;
+      btn.innerHTML = `
+        <div class="cmd-item-main">
+          <span class="cmd-tag">${escapeHtml(it.kind)}</span>
+          <span class="cmd-title">${escapeHtml(it.title)}</span>
+        </div>
+        <span class="cmd-sub">${escapeHtml(it.sub)}</span>
+      `;
+      btn.addEventListener("click", () => {
+        closeModal(els.cmdPaletteModal);
+        it.run();
+      });
+      els.cmdResults.appendChild(btn);
+    });
+  }
+
+  function moveCmdSelection(delta) {
+    if (!state.cmdItems.length) return;
+    state.cmdIndex = (state.cmdIndex + delta + state.cmdItems.length) % state.cmdItems.length;
+    const items = els.cmdResults.querySelectorAll(".cmd-item");
+    items.forEach((el, i) => el.classList.toggle("active", i === state.cmdIndex));
+    items[state.cmdIndex]?.scrollIntoView({ block: "nearest" });
   }
 
   async function renderOcrMiniPreview(code) {
@@ -1790,14 +2324,66 @@
   function bindEvents() {
     els.themeToggleBtn.addEventListener("click", () => {
       const cur = document.documentElement.getAttribute("data-theme") || "light";
-      applyTheme(cur === "dark" ? "light" : "dark");
+      applyTheme(cur === "dark" ? "light" : "dark", { syncPreview: true });
     });
 
-    els.ribbonToggleBtn.addEventListener("click", () => {
-      const collapsed = els.ribbonShell.classList.toggle("collapsed");
-      els.ribbonToggleBtn.textContent = collapsed ? "展开符号栏 ▼" : "收起符号栏 ▲";
-      localStorage.setItem(STORAGE_KEYS.ribbonCollapsed, collapsed ? "1" : "0");
+    // Activity Rail & Side Panel
+    document.querySelectorAll(".rail-btn[data-rail]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const rail = btn.dataset.rail;
+        if (state.sidePanelOpen && state.sidePanelTab === rail) {
+          setSidePanel(rail, { open: false });
+        } else {
+          setSidePanel(rail, { open: true });
+        }
+      });
     });
+    els.railCollapseBtn?.addEventListener("click", () => {
+      setSidePanel(state.sidePanelTab, { open: !state.sidePanelOpen });
+    });
+    els.sidePanelCloseBtn?.addEventListener("click", () => {
+      setSidePanel(state.sidePanelTab, { open: false });
+    });
+    els.panelSaveFavBtn?.addEventListener("click", saveCurrentAsFavorite);
+    els.symSearchInput?.addEventListener("input", () => {
+      state.symQuery = els.symSearchInput.value;
+      renderRibbon();
+    });
+
+    // Split Dropdowns
+    function closeAllDropdowns() {
+      document.querySelectorAll(".dropdown-wrap.open").forEach((w) => w.classList.remove("open"));
+    }
+    document.addEventListener("click", (e) => {
+      const trig = e.target.closest(".dropdown-trigger");
+      if (trig) {
+        e.stopPropagation();
+        const wrap = trig.closest(".dropdown-wrap");
+        const wasOpen = wrap?.classList.contains("open");
+        closeAllDropdowns();
+        if (wrap && !wasOpen) wrap.classList.add("open");
+        return;
+      }
+      if (e.target.closest(".dropdown-keep-open")) return;
+      if (e.target.closest(".dropdown-item")) {
+        closeAllDropdowns();
+        return;
+      }
+      if (!e.target.closest(".dropdown-wrap")) {
+        closeAllDropdowns();
+      }
+    });
+
+    // Word wrap & CodeStage ResizeObserver
+    els.wordWrapBtn?.addEventListener("click", () => {
+      applyWordWrap(!state.wordWrap);
+    });
+    if (els.codeStage && window.ResizeObserver) {
+      const ro = new ResizeObserver(() => {
+        if (state.wordWrap) syncLineNumberHeights();
+      });
+      ro.observe(els.codeStage);
+    }
 
     // Editor typing & smart pairs / undo
     let beforeInputSnap = null;
@@ -2004,7 +2590,7 @@
     // Layout options
     els.layoutToggleBtn.addEventListener("click", () => {
       const hidden = els.layoutBar.classList.toggle("hidden");
-      els.layoutToggleBtn.textContent = hidden ? "排版参数 ▾" : "排版参数 ▴";
+      els.layoutToggleBtn.classList.toggle("active", !hidden);
     });
     els.togglePreambleBtn.addEventListener("click", () => {
       els.preambleBar.classList.toggle("hidden");
@@ -2026,10 +2612,7 @@
     // Preview controls
     document.querySelectorAll(".bg-btn").forEach((btn) => {
       btn.addEventListener("click", () => {
-        document.querySelectorAll(".bg-btn").forEach((b) => b.classList.remove("active"));
-        btn.classList.add("active");
-        const bg = btn.dataset.bg;
-        els.previewStage.className = `preview-stage bg-${bg}`;
+        setPreviewBg(btn.dataset.bg, { persist: true });
       });
     });
 
@@ -2050,67 +2633,7 @@
     els.dismissErrorBtn.addEventListener("click", () => els.errorCard.classList.add("hidden"));
     els.toggleLastValidBtn.addEventListener("click", () => els.errorCard.classList.add("hidden"));
 
-    // Library drawer toggle, resize, tabs & search
-    function setLibDrawerOpen(open, { persist = true } = {}) {
-      const isOpen = Boolean(open);
-      els.libraryDock.classList.toggle("collapsed", !isOpen);
-      els.toggleLibBarBtn.textContent = isOpen ? "收起抽屉 ▼" : "展开模板抽屉 ▲";
-      els.toggleLibDrawerBtn.classList.toggle("active", isOpen);
-      els.expandLibBtn.classList.toggle("hidden", !isOpen);
-      if (!isOpen) {
-        document.body.classList.remove("lib-expanded");
-        els.expandLibBtn.textContent = "半屏 ⤢";
-      }
-      if (persist) {
-        localStorage.setItem(STORAGE_KEYS.libOpen, isOpen ? "1" : "0");
-      }
-    }
-
-    function initLibDrawerResizer() {
-      let dragging = false;
-      let startY = 0;
-      let startH = 290;
-
-      els.libDrawerResizer.addEventListener("mousedown", (e) => {
-        if (els.libraryDock.classList.contains("collapsed")) return;
-        e.preventDefault();
-        dragging = true;
-        startY = e.clientY;
-        startH = els.libraryDock.getBoundingClientRect().height;
-        els.libDrawerResizer.classList.add("dragging");
-        document.body.classList.remove("lib-expanded");
-        els.expandLibBtn.textContent = "半屏 ⤢";
-        document.body.style.cursor = "ns-resize";
-      });
-
-      window.addEventListener("mousemove", (e) => {
-        if (!dragging) return;
-        const maxH = Math.round(window.innerHeight * 0.65);
-        const nextH = Math.max(180, Math.min(maxH, startH + (startY - e.clientY)));
-        els.libraryDock.style.height = `${nextH}px`;
-      });
-
-      window.addEventListener("mouseup", () => {
-        if (!dragging) return;
-        dragging = false;
-        els.libDrawerResizer.classList.remove("dragging");
-        document.body.style.cursor = "";
-        localStorage.setItem(
-          STORAGE_KEYS.libHeight,
-          String(Math.round(els.libraryDock.getBoundingClientRect().height))
-        );
-      });
-    }
-
-    initLibDrawerResizer();
-
-    els.toggleLibDrawerBtn.addEventListener("click", () => {
-      setLibDrawerOpen(els.libraryDock.classList.contains("collapsed"));
-    });
-    els.toggleLibBarBtn.addEventListener("click", () => {
-      setLibDrawerOpen(els.libraryDock.classList.contains("collapsed"));
-    });
-
+    // Library tabs & search inside Side Panel
     document.querySelectorAll(".lib-tab").forEach((tab) => {
       tab.addEventListener("click", () => {
         document.querySelectorAll(".lib-tab").forEach((t) => t.classList.remove("active"));
@@ -2118,27 +2641,14 @@
         state.libMode = tab.dataset.lib;
         state.libCategory = "all";
         renderLibrary();
-        if (els.libraryDock.classList.contains("collapsed")) {
-          setLibDrawerOpen(true);
-        }
       });
-    });
-    els.libSearchInput.addEventListener("focus", () => {
-      if (els.libraryDock.classList.contains("collapsed")) {
-        setLibDrawerOpen(true);
-      }
     });
     els.libSearchInput.addEventListener("input", () => {
       state.libQuery = els.libSearchInput.value;
       renderLibrary();
-      if (els.libraryDock.classList.contains("collapsed") && state.libQuery.trim()) {
-        setLibDrawerOpen(true);
-      }
     });
-    els.expandLibBtn.addEventListener("click", () => {
-      const exp = document.body.classList.toggle("lib-expanded");
-      els.expandLibBtn.textContent = exp ? "还原高度 ⤡" : "半屏 ⤢";
-    });
+    els.libGrid?.addEventListener("scroll", hideLibHoverPreview);
+    els.favoritesList?.addEventListener("scroll", hideLibHoverPreview);
 
     // Mode Switch (Composer <-> LaTeX Code)
     function switchEditorMode(mode) {
@@ -2152,7 +2662,6 @@
       const isCode = state.editorMode === "code";
       els.composerView.classList.toggle("hidden", isCode);
       els.codeView.classList.toggle("hidden", !isCode);
-      els.editorActionsBar.classList.toggle("hidden", !isCode);
       if (isCode) {
         if (prevMode === "composer" && state.composer && state.composer.hasBlocks()) {
           const gen = state.composer.getGeneratedLatex();
@@ -2162,6 +2671,7 @@
         }
         updateLineNumbers();
         renderCodeHighlight();
+        requestAnimationFrame(syncLineNumberHeights);
       } else if (state.composer) {
         const res = state.composer.syncFromLatex(els.codeEditor.value);
         if (res?.synced && res.fallbackRaw) {
@@ -2185,7 +2695,7 @@
             closeModal(els.sketchModal);
           },
           onLoad: (code) => {
-            setEditorCode(code, { render: true, recordUndo: true });
+            setEditorCode(code, { render: true, immediate: true, recordUndo: true });
             closeModal(els.sketchModal);
           },
         });
@@ -2193,7 +2703,7 @@
       return state.sketcher;
     }
 
-    // Modals & Drawer
+    // Modals & Command Palette
     $("openSketchBtn").addEventListener("click", () => {
       const sk = ensureSketcher();
       if (state.editorMode === "composer" && state.composer && sk) {
@@ -2213,12 +2723,67 @@
     });
     $("openOcrBtn")?.addEventListener("click", () => openModal(els.ocrModal));
     $("openGuideBtn").addEventListener("click", () => openModal(els.guideModal));
-    $("openDrawerBtn").addEventListener("click", () => {
-      els.historyDrawer.classList.remove("hidden");
-      renderDrawer();
+    els.openCmdPaletteBtn?.addEventListener("click", openCmdPalette);
+
+    els.cmdSearchInput?.addEventListener("input", () => {
+      renderCmdResults(els.cmdSearchInput.value);
     });
-    $("closeDrawerBtn").addEventListener("click", () => {
-      els.historyDrawer.classList.add("hidden");
+    els.cmdSearchInput?.addEventListener("keydown", (e) => {
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        moveCmdSelection(1);
+      } else if (e.key === "ArrowUp") {
+        e.preventDefault();
+        moveCmdSelection(-1);
+      } else if (e.key === "Enter") {
+        e.preventDefault();
+        const item = state.cmdItems[state.cmdIndex];
+        if (item) {
+          closeModal(els.cmdPaletteModal);
+          item.run();
+        }
+      }
+    });
+
+    // Global keyboard shortcuts (Ctrl+K, Ctrl+B, Escape)
+    window.addEventListener("keydown", (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        if (els.cmdPaletteModal.classList.contains("hidden")) {
+          openCmdPalette();
+        } else {
+          closeModal(els.cmdPaletteModal);
+        }
+        return;
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "b") {
+        if (!["INPUT", "TEXTAREA"].includes(document.activeElement?.tagName)) {
+          e.preventDefault();
+          setSidePanel(state.sidePanelTab, { open: !state.sidePanelOpen });
+          return;
+        }
+      }
+      if (e.key === "Escape" && !e.defaultPrevented) {
+        if (!els.cmdPaletteModal.classList.contains("hidden")) {
+          closeModal(els.cmdPaletteModal);
+          return;
+        }
+        if (document.querySelector(".dropdown-wrap.open")) {
+          closeAllDropdowns();
+          return;
+        }
+        if (!els.guideModal.classList.contains("hidden")) {
+          closeModal(els.guideModal);
+          return;
+        }
+        if (!els.ocrModal.classList.contains("hidden")) {
+          closeModal(els.ocrModal);
+          return;
+        }
+        if (!els.sketchModal.classList.contains("hidden")) {
+          closeModal(els.sketchModal);
+        }
+      }
     });
 
     document.querySelectorAll(".modal-close").forEach((btn) => {
@@ -2230,7 +2795,7 @@
       });
     });
 
-    // OCR modal actions
+    // OCR modal actions + global image paste when not typing
     els.ocrDropZone.addEventListener("click", () => els.ocrFileInput.click());
     els.ocrFileInput.addEventListener("change", () => {
       if (els.ocrFileInput.files[0]) runImageOcr(els.ocrFileInput.files[0]);
@@ -2249,12 +2814,15 @@
       if (file) runImageOcr(file);
     });
     window.addEventListener("paste", (e) => {
-      if (els.ocrModal.classList.contains("hidden")) return;
+      const ocrClosed = els.ocrModal.classList.contains("hidden");
+      const activeTag = document.activeElement?.tagName;
+      if (ocrClosed && ["INPUT", "TEXTAREA"].includes(activeTag)) return;
       const items = e.clipboardData?.items || [];
       for (const item of items) {
         if (item.type.startsWith("image/")) {
           const file = item.getAsFile();
           if (file) {
+            if (ocrClosed) openModal(els.ocrModal);
             runImageOcr(file);
             break;
           }
@@ -2286,37 +2854,63 @@
       closeModal(els.ocrModal);
     });
     $("ocrLoadBtn").addEventListener("click", () => {
-      setEditorCode(els.ocrOutput.value.trim(), { render: true, recordUndo: true });
+      setEditorCode(els.ocrOutput.value.trim(), { render: true, immediate: true, recordUndo: true });
+      if (state.editorMode === "composer" && state.composer) {
+        state.composer.syncFromLatex(els.ocrOutput.value.trim());
+      }
       closeModal(els.ocrModal);
     });
 
-    // Drawer tabs
-    document.querySelectorAll(".drawer-tab").forEach((t) => {
-      t.addEventListener("click", () => {
-        document.querySelectorAll(".drawer-tab").forEach((x) => x.classList.remove("active"));
-        t.classList.add("active");
-        state.drawerTab = t.dataset.dtab;
-        renderDrawer();
-      });
-    });
     $("clearHistoryBtn").addEventListener("click", () => {
       state.history = [];
       saveJsonStorage(STORAGE_KEYS.history, []);
-      renderDrawer();
+      renderHistoryList();
       toast("已清空历史记录");
     });
   }
 
   async function bootstrap() {
-    applyTheme(localStorage.getItem(STORAGE_KEYS.theme) || "light");
+    const savedTheme = localStorage.getItem(STORAGE_KEYS.theme) || "light";
+    applyTheme(savedTheme, { syncPreview: false });
+    const savedBg = localStorage.getItem(STORAGE_KEYS.previewBg);
+    if (savedBg) setPreviewBg(savedBg, { persist: false });
+
     state.history = loadJsonStorage(STORAGE_KEYS.history, []);
     state.favorites = loadJsonStorage(STORAGE_KEYS.favorites, []);
     updateFavCounts();
 
+    initSideResizer();
     initSplitResizer();
     initPreviewPan();
     bindEvents();
+
+    const savedWrap = localStorage.getItem(STORAGE_KEYS.wordWrap);
+    applyWordWrap(savedWrap !== "0", { persist: false });
+
+    const savedTab = localStorage.getItem(STORAGE_KEYS.sidePanelTab) || "library";
+    const savedOpenRaw = localStorage.getItem(STORAGE_KEYS.sidePanelOpen);
+    const defaultOpen = window.innerWidth > 860;
+    const isPanelOpen = savedOpenRaw === null ? defaultOpen : savedOpenRaw === "1";
+    setSidePanel(savedTab, { open: isPanelOpen, persist: false });
+
     initExports();
+    renderCodeQuickStrip();
+
+    try {
+      const resp = await fetch("/api/catalog");
+      state.catalog = await resp.json();
+      const fLen = (state.catalog.formula_templates || []).length;
+      const mLen = (state.catalog.molecule_library || []).length;
+      els.formulaCount.textContent = String(fLen);
+      els.moleculeCount.textContent = String(mLen);
+      els.libTotalBadge.textContent = String(fLen + mLen);
+      renderRibbon();
+      renderLibrary();
+      renderFavoritesList();
+      renderHistoryList();
+    } catch (err) {
+      toast(`加载模板库失败：${err}`, true);
+    }
 
     const savedMode = localStorage.getItem(STORAGE_KEYS.editorMode) || "composer";
     state.editorMode = savedMode === "code" ? "code" : "composer";
@@ -2324,6 +2918,7 @@
     if (window.ChemComposer) {
       state.composer = window.ChemComposer.init({
         containerEl: els.composerView,
+        autoSync: false,
         toast,
         getPreviewSvg: (id) => (state.catalog.previews || {})[id] || "",
         renderSnippetSvg: async (snippet) => {
@@ -2335,8 +2930,8 @@
           const data = await resp.json();
           return resp.ok && data.ok ? data.svg : "";
         },
-        onCodeGenerated: (latex) => {
-          setEditorCode(latex, { render: true, recordUndo: true });
+        onCodeGenerated: (latex, { immediate = false } = {}) => {
+          setEditorCode(latex, { render: true, immediate, recordUndo: true });
         },
         onOpenSketch: ({ blockId, sketchData, code, name }) => {
           if (!state.sketcher && window.ChemSketcher) {
@@ -2348,7 +2943,7 @@
                 closeModal(els.sketchModal);
               },
               onLoad: (c) => {
-                setEditorCode(c, { render: true, recordUndo: true });
+                setEditorCode(c, { render: true, immediate: true, recordUndo: true });
                 closeModal(els.sketchModal);
               },
             });
@@ -2382,46 +2977,17 @@
     });
     els.composerView.classList.toggle("hidden", isCodeInit);
     els.codeView.classList.toggle("hidden", !isCodeInit);
-    els.editorActionsBar.classList.toggle("hidden", !isCodeInit);
 
     const savedCode = localStorage.getItem(STORAGE_KEYS.code);
     if (isCodeInit && savedCode && savedCode.trim()) {
       els.codeEditor.value = savedCode;
-      onCodeChanged({ triggerRender: false });
+      onCodeChanged({ triggerRender: true, immediate: true });
+      requestAnimationFrame(syncLineNumberHeights);
     } else if (state.composer && state.composer.hasBlocks()) {
-      state.composer.syncNow();
+      state.composer.syncNow({ immediate: true });
     } else {
       els.codeEditor.value = savedCode && savedCode.trim() ? savedCode : DEFAULT_CODE;
-      onCodeChanged({ triggerRender: false });
-      scheduleRender(true);
-    }
-
-    const savedRibbonCollapsed = localStorage.getItem(STORAGE_KEYS.ribbonCollapsed) === "1";
-    els.ribbonShell.classList.toggle("collapsed", savedRibbonCollapsed);
-    els.ribbonToggleBtn.textContent = savedRibbonCollapsed ? "展开符号栏 ▼" : "收起符号栏 ▲";
-
-    const savedLibH = parseInt(localStorage.getItem(STORAGE_KEYS.libHeight) || "", 10);
-    if (Number.isFinite(savedLibH) && savedLibH >= 180 && savedLibH <= 640) {
-      els.libraryDock.style.height = `${savedLibH}px`;
-    }
-    const savedLibOpen = localStorage.getItem(STORAGE_KEYS.libOpen) === "1";
-    els.libraryDock.classList.toggle("collapsed", !savedLibOpen);
-    els.toggleLibBarBtn.textContent = savedLibOpen ? "收起抽屉 ▼" : "展开模板抽屉 ▲";
-    els.toggleLibDrawerBtn.classList.toggle("active", savedLibOpen);
-    els.expandLibBtn.classList.toggle("hidden", !savedLibOpen);
-
-    try {
-      const resp = await fetch("/api/catalog");
-      state.catalog = await resp.json();
-      const fLen = (state.catalog.formula_templates || []).length;
-      const mLen = (state.catalog.molecule_library || []).length;
-      els.formulaCount.textContent = String(fLen);
-      els.moleculeCount.textContent = String(mLen);
-      els.libTotalBadge.textContent = String(fLen + mLen);
-      renderRibbon();
-      renderLibrary();
-    } catch (err) {
-      toast(`加载模板库失败：${err}`, true);
+      onCodeChanged({ triggerRender: true, immediate: true });
     }
   }
 

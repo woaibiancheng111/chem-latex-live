@@ -15,13 +15,13 @@
   const SVG_NS = "http://www.w3.org/2000/svg";
 
   const PALETTE_ITEMS = [
-    { kind: "plus", label: "+", sub: "加号", title: "添加反应加号 +" },
-    { kind: "arrow", arrowStyle: "->", label: "→", sub: "反应箭头", title: "添加向右反应箭头（可双击填上下条件）" },
-    { kind: "arrow", arrowStyle: "<=>", label: "⇌", sub: "可逆平衡", title: "添加可逆平衡箭头" },
-    { kind: "arrow", arrowStyle: "<->", label: "↔", sub: "共振箭头", title: "添加共振双向箭头" },
-    { kind: "ce", label: "\\ce{}", sub: "化学式", title: "添加 mhchem 化学式（如 H2SO4、CO2）" },
-    { kind: "text", label: "Aa", sub: "文字/旁注", title: "添加文字标注块" },
-    { kind: "newline", label: "↵", sub: "换行", title: "换行写下一步反应（仅反应流模式）" },
+    { kind: "plus", label: "+", sub: "", title: "添加反应加号 +" },
+    { kind: "arrow", arrowStyle: "->", label: "→", sub: "", title: "添加向右反应箭头（可双击填上下条件）" },
+    { kind: "arrow", arrowStyle: "<=>", label: "⇌", sub: "", title: "添加可逆平衡箭头" },
+    { kind: "arrow", arrowStyle: "<->", label: "↔", sub: "", title: "添加共振双向箭头" },
+    { kind: "ce", label: "\\ce", sub: "", title: "添加 mhchem 化学式（如 H2SO4、CO2）" },
+    { kind: "text", label: "Aa", sub: "", title: "添加文字 / 旁注块" },
+    { kind: "newline", label: "↵", sub: "", title: "换行写下一步反应（仅反应流模式）" },
   ];
 
   const ARROW_SYMBOLS = {
@@ -129,6 +129,7 @@
       connBar: document.getElementById("cmpConnBar"),
       autoAlignBtn: document.getElementById("cmpAutoAlignBtn"),
       undoBtn: document.getElementById("cmpUndoBtn"),
+      redoBtn: document.getElementById("cmpRedoBtn"),
       clearBtn: document.getElementById("cmpClearBtn"),
       presetHydration: document.getElementById("cmpPresetHydration"),
       presetHBond: document.getElementById("cmpPresetHBond"),
@@ -322,10 +323,10 @@
       ].join("\n");
     }
 
-    function syncOutput() {
+    function syncOutput({ immediate = false } = {}) {
       saveLocal();
       const latex = generateLatex();
-      opts.onCodeGenerated?.(latex);
+      opts.onCodeGenerated?.(latex, { immediate });
     }
 
     function needsAnnotationPreview(block) {
@@ -433,7 +434,7 @@
       }
       st.selectedBlockId = block.id;
       render();
-      syncOutput();
+      syncOutput({ immediate: true });
       ensureBlockSvg(block);
     }
 
@@ -472,14 +473,14 @@
       st.blocks.push(blk);
       st.selectedBlockId = blk.id;
       render();
-      syncOutput();
+      syncOutput({ immediate: true });
       ensureBlockSvg(blk);
       return blk;
     }
 
     // -------------------- Presets --------------------
-    function loadPreset(presetName) {
-      pushUndo();
+    function loadPreset(presetName, { silent = false } = {}) {
+      if (!silent) pushUndo();
       if (presetName === "hydration") {
         st.layoutMode = "flow";
         st.connectors = [];
@@ -521,7 +522,11 @@
         st.connectors = [{ id: uid("conn"), from: b1.id, to: b2.id, style: "dotted", label: "氢键" }];
       }
       render();
-      syncOutput();
+      if (silent) {
+        saveLocal();
+      } else {
+        syncOutput({ immediate: true });
+      }
       st.blocks.forEach((b) => ensureBlockSvg(b));
     }
 
@@ -646,7 +651,7 @@
       }
       closePopover();
       render();
-      syncOutput();
+      syncOutput({ immediate: true });
     });
 
     els.popSave.addEventListener("click", () => {
@@ -687,7 +692,7 @@
       }
       closePopover();
       render();
-      syncOutput();
+      syncOutput({ immediate: true });
     });
 
     // -------------------- Rendering --------------------
@@ -736,7 +741,7 @@
         st.connectors = st.connectors.filter((c) => c.from !== b.id && c.to !== b.id);
         if (st.selectedBlockId === b.id) st.selectedBlockId = null;
         render();
-        syncOutput();
+        syncOutput({ immediate: true });
       });
 
       miniActions.append(editBtn, dupBtn, delBtn);
@@ -836,9 +841,19 @@
         const empty = document.createElement("div");
         empty.className = "cmp-empty";
         empty.innerHTML = `
-          <strong>把底部的化学模板 / 分子卡片，或上方 <code>+</code> <code>→</code> <code>\\ce{}</code> 拖到这里组合</strong>
-          <p>也可以直接点击底部卡片加入反应流，双击积木修改条件或用 2D 画板绘制</p>
+          <strong>把左侧模板 / 分子卡片，或上方 <code>+</code> <code>→</code> <code>\\ce{}</code> 拖到这里组合</strong>
+          <p>也可以直接点击左侧卡片加入反应流，双击积木修改条件或用 2D 画板绘制</p>
+          <div class="cmp-empty-actions">
+            <button type="button" class="chip-btn accent" data-empty-act="hydration">载入丙烯水合示例</button>
+            <button type="button" class="chip-btn" data-empty-act="hbond">载入氢键示例</button>
+            <button type="button" class="chip-btn" data-empty-act="sketch">打开 2D 画板</button>
+          </div>
         `;
+        empty.querySelector('[data-empty-act="hydration"]')?.addEventListener("click", () => loadPreset("hydration"));
+        empty.querySelector('[data-empty-act="hbond"]')?.addEventListener("click", () => loadPreset("hbond"));
+        empty.querySelector('[data-empty-act="sketch"]')?.addEventListener("click", () => {
+          opts.onOpenSketch?.({ blockId: null, sketchData: null });
+        });
         stage.appendChild(empty);
       } else {
         const rows = [];
@@ -893,7 +908,7 @@
               pushUndo();
               st.blocks = st.blocks.filter((x) => x.id !== row.nlBlock.id);
               render();
-              syncOutput();
+              syncOutput({ immediate: true });
             });
             sep.appendChild(delNl);
             stage.appendChild(sep);
@@ -1207,7 +1222,7 @@
         const targetIdx = insertIndex > oldIdx ? insertIndex - 1 : insertIndex;
         st.blocks.splice(Math.max(0, Math.min(st.blocks.length, targetIdx)), 0, moved);
         render();
-        syncOutput();
+        syncOutput({ immediate: true });
         return;
       }
 
@@ -1265,16 +1280,6 @@
         });
         els.palette.appendChild(btn);
       });
-
-      const sketchBtn = document.createElement("button");
-      sketchBtn.type = "button";
-      sketchBtn.className = "cmp-chip accent";
-      sketchBtn.title = "打开 2D 分子画板手绘一个分子积木";
-      sketchBtn.innerHTML = `<strong>⬡</strong><span>手绘分子</span>`;
-      sketchBtn.addEventListener("click", () => {
-        opts.onOpenSketch?.({ blockId: null, sketchData: null });
-      });
-      els.palette.appendChild(sketchBtn);
     }
 
     function renderCanvas() {
@@ -1303,7 +1308,7 @@
       st.connectTool = null;
       st.connectFromId = null;
       render();
-      syncOutput();
+      syncOutput({ immediate: true });
     });
 
     els.freeBtn.addEventListener("click", () => {
@@ -1317,7 +1322,7 @@
         }
       });
       render();
-      syncOutput();
+      syncOutput({ immediate: true });
     });
 
     els.connBar.querySelectorAll("[data-conn-style]").forEach((btn) => {
@@ -1352,7 +1357,7 @@
         curX += w + 28;
       });
       render();
-      syncOutput();
+      syncOutput({ immediate: true });
     });
 
     els.undoBtn.addEventListener("click", () => {
@@ -1364,7 +1369,19 @@
       st.connectors = prev.connectors;
       closePopover();
       render();
-      syncOutput();
+      syncOutput({ immediate: true });
+    });
+
+    els.redoBtn?.addEventListener("click", () => {
+      if (st.redoStack.length === 0) return;
+      st.undoStack.push(cloneData({ layoutMode: st.layoutMode, blocks: st.blocks, connectors: st.connectors }));
+      const nxt = st.redoStack.pop();
+      st.layoutMode = nxt.layoutMode;
+      st.blocks = nxt.blocks;
+      st.connectors = nxt.connectors;
+      closePopover();
+      render();
+      syncOutput({ immediate: true });
     });
 
     els.clearBtn.addEventListener("click", () => {
@@ -1375,14 +1392,21 @@
       st.selectedBlockId = null;
       closePopover();
       render();
-      syncOutput();
+      syncOutput({ immediate: true });
     });
 
-    els.presetHydration.addEventListener("click", () => loadPreset("hydration"));
-    els.presetHBond.addEventListener("click", () => loadPreset("hbond"));
-    els.switchCodeBtn.addEventListener("click", () => opts.onSwitchToCode?.());
+    els.presetHydration?.addEventListener("click", () => {
+      els.presetHydration.closest(".dropdown-wrap")?.classList.remove("open");
+      loadPreset("hydration");
+    });
+    els.presetHBond?.addEventListener("click", () => {
+      els.presetHBond.closest(".dropdown-wrap")?.classList.remove("open");
+      loadPreset("hbond");
+    });
+    els.switchCodeBtn?.addEventListener("click", () => opts.onSwitchToCode?.());
 
     // Restore from localStorage or load default reaction example
+    let restoredFromStorage = false;
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
       if (raw) {
@@ -1391,18 +1415,18 @@
           st.layoutMode = parsed.layoutMode === "free" ? "free" : "flow";
           st.blocks = parsed.blocks;
           st.connectors = Array.isArray(parsed.connectors) ? parsed.connectors : [];
-        } else {
-          loadPreset("hydration");
+          restoredFromStorage = true;
         }
-      } else {
-        loadPreset("hydration");
       }
     } catch {
-      loadPreset("hydration");
+      // Ignore corrupt storage
     }
-
-    render();
-    st.blocks.forEach((b) => ensureBlockSvg(b));
+    if (restoredFromStorage) {
+      render();
+      st.blocks.forEach((b) => ensureBlockSvg(b));
+    } else {
+      loadPreset("hydration", { silent: opts.autoSync === false });
+    }
 
     // -------------------- Ribbon & Bidirectional LaTeX Sync --------------------
     function extractBalanced(str, openPos, openCh, closeCh) {
@@ -1736,7 +1760,7 @@
       }
       if (id === "sc_block") {
         syncFromLatex(item.snippet || "");
-        syncOutput();
+        syncOutput({ immediate: true });
         return true;
       }
       if (id === "m_disp" || id === "m_inl" || id === "tk_env" || id === "sc_move") {
@@ -1768,7 +1792,8 @@
       getSelectedBlock,
       getGeneratedLatex: () => generateLatex().trim(),
       getMode: () => st.layoutMode,
-      syncNow: syncOutput,
+      syncNow: (syncOpts) => syncOutput(syncOpts || { immediate: true }),
+      loadPreset,
       hasBlocks: () => st.blocks.some((b) => b.type !== "newline"),
     };
   }

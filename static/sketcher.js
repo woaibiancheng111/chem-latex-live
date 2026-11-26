@@ -123,6 +123,10 @@
       svg: document.getElementById("sketchSvg"),
       inlineInput: document.getElementById("sketchInlineInput"),
       unifiedPalette: document.getElementById("sketchUnifiedPalette"),
+      atomRail: document.getElementById("sketchAtomRail"),
+      groupGrid: document.getElementById("sketchGroupGrid"),
+      groupsToggleBtn: document.getElementById("sketchGroupsToggleBtn"),
+      groupsPopover: document.getElementById("sketchGroupsPopover"),
       customAtomInput: document.getElementById("sketchCustomAtomInput"),
       applyCustomAtomBtn: document.getElementById("sketchApplyCustomAtomBtn"),
       codeOutput: document.getElementById("sketchCodeOutput"),
@@ -998,9 +1002,7 @@
     }
 
     function clearChipActive() {
-      if (els.unifiedPalette) {
-        els.unifiedPalette.querySelectorAll(".sk-chip").forEach((c) => c.classList.remove("active"));
-      }
+      modal.querySelectorAll(".sk-chip").forEach((c) => c.classList.remove("active"));
     }
 
     function setTool(toolName) {
@@ -1021,6 +1023,7 @@
     }
 
     function chooseAtomLabel(label, chipEl = null) {
+      closeGroupsPopover();
       const selected = st.tool === "select" && atomById(st.selectedAtomId);
       if (selected) {
         if (replaceAtomLabel(selected, label)) scheduleSync();
@@ -1032,7 +1035,84 @@
       chipEl?.classList.add("active");
     }
 
+    const CORE_ATOM_LABELS = new Set(["", "C", "H", "O", "N", "S", "P", "F", "Cl", "Br", "I"]);
+
+    function closeGroupsPopover() {
+      els.groupsPopover?.classList.add("hidden");
+      els.groupsToggleBtn?.classList.remove("active");
+    }
+
+    function makePaletteChip(item, { compact = false } = {}) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      if (item.kind === "charge") {
+        btn.className = "sk-chip sk-chg";
+        btn.textContent = item.text;
+        btn.title = `点击原子设置电荷：${item.chg}`;
+        btn.addEventListener("click", () => {
+          st.chargeVal = item.chg;
+          setTool("charge");
+          clearChipActive();
+          btn.classList.add("active");
+          closeGroupsPopover();
+        });
+        return btn;
+      }
+
+      btn.className = "sk-chip sk-draggable";
+      btn.textContent = compact && item.label === "" ? "·C·" : item.text;
+      btn.title = item.title || (item.kind === "atom" && ELEMENT_LABELS.has(item.label)
+        ? `选中顶点后点 ${item.text} 进行替换，也可直接拖到顶点`
+        : `点击选择 ${item.text}，或拖到画布上连接`);
+      if (item.kind === "atom" || item.kind === "group") {
+        btn.addEventListener("click", (e) => {
+          if (e.detail === 0) chooseAtomLabel(item.label, btn);
+        });
+      }
+      btn.addEventListener("mousedown", (e) => {
+        if (e.button !== 0) return;
+        e.preventDefault();
+        st.fragDrag = {
+          frag: item,
+          chipEl: btn,
+          startX: e.clientX,
+          startY: e.clientY,
+          moved: false,
+          inside: false,
+          snap: null,
+          pt: null,
+        };
+      });
+      return btn;
+    }
+
     function buildPalettes() {
+      if (els.atomRail && els.groupGrid) {
+        els.atomRail.innerHTML = "";
+        els.groupGrid.innerHTML = "";
+        let addedChargeSep = false;
+        UNIFIED_PALETTE.forEach((item) => {
+          if (item.kind === "sep") return;
+          if (item.kind === "charge") {
+            if (!addedChargeSep) {
+              const sep = document.createElement("span");
+              sep.className = "sk-rail-sep";
+              sep.setAttribute("aria-hidden", "true");
+              els.atomRail.appendChild(sep);
+              addedChargeSep = true;
+            }
+            els.atomRail.appendChild(makePaletteChip(item, { compact: true }));
+            return;
+          }
+          if (item.kind === "atom" && CORE_ATOM_LABELS.has(item.label)) {
+            els.atomRail.appendChild(makePaletteChip(item, { compact: true }));
+          } else {
+            els.groupGrid.appendChild(makePaletteChip(item));
+          }
+        });
+        return;
+      }
+
       if (!els.unifiedPalette) return;
       els.unifiedPalette.innerHTML = "";
       UNIFIED_PALETTE.forEach((item) => {
@@ -1043,48 +1123,7 @@
           els.unifiedPalette.appendChild(sep);
           return;
         }
-
-        const btn = document.createElement("button");
-        btn.type = "button";
-        if (item.kind === "charge") {
-          btn.className = "sk-chip sk-chg";
-          btn.textContent = item.text;
-          btn.title = `点击原子设置电荷：${item.chg}`;
-          btn.addEventListener("click", () => {
-            st.chargeVal = item.chg;
-            setTool("charge");
-            clearChipActive();
-            btn.classList.add("active");
-          });
-          els.unifiedPalette.appendChild(btn);
-          return;
-        }
-
-        btn.className = "sk-chip sk-draggable";
-        btn.textContent = item.text;
-        btn.title = item.title || (item.kind === "atom" && ELEMENT_LABELS.has(item.label)
-          ? `选中顶点后点 ${item.text} 进行替换，也可直接拖到顶点`
-          : `点击选择 ${item.text}，或拖到画布上连接`);
-        if (item.kind === "atom" || item.kind === "group") {
-          btn.addEventListener("click", (e) => {
-            if (e.detail === 0) chooseAtomLabel(item.label, btn);
-          });
-        }
-        btn.addEventListener("mousedown", (e) => {
-          if (e.button !== 0) return;
-          e.preventDefault();
-          st.fragDrag = {
-            frag: item,
-            chipEl: btn,
-            startX: e.clientX,
-            startY: e.clientY,
-            moved: false,
-            inside: false,
-            snap: null,
-            pt: null,
-          };
-        });
-        els.unifiedPalette.appendChild(btn);
+        els.unifiedPalette.appendChild(makePaletteChip(item));
       });
     }
 
@@ -1251,6 +1290,7 @@
       if (st.fragDrag) {
         if (Math.hypot(e.clientX - st.fragDrag.startX, e.clientY - st.fragDrag.startY) > 5) {
           st.fragDrag.moved = true;
+          closeGroupsPopover();
         }
         const pt = svgPointFromEvent(e);
         st.fragDrag.inside = pt.inside;
@@ -1343,6 +1383,7 @@
               setTool("frag");
               clearChipActive();
               if (fd.chipEl) fd.chipEl.classList.add("active");
+              closeGroupsPopover();
             }
           }
           renderCanvas();
@@ -1436,6 +1477,22 @@
 
     modal.querySelectorAll("[data-skpreset]").forEach((btn) => {
       btn.addEventListener("click", () => loadPreset(btn.dataset.skpreset));
+    });
+
+    els.groupsToggleBtn?.addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (!els.groupsPopover) return;
+      const open = els.groupsPopover.classList.toggle("hidden") === false;
+      els.groupsToggleBtn.classList.toggle("active", open);
+    });
+    modal.addEventListener("mousedown", (e) => {
+      if (
+        els.groupsPopover &&
+        !els.groupsPopover.classList.contains("hidden") &&
+        !e.target.closest("#sketchGroupsPopover, #sketchGroupsToggleBtn")
+      ) {
+        closeGroupsPopover();
+      }
     });
 
     els.applyCustomAtomBtn.addEventListener("click", () => {
@@ -1562,6 +1619,7 @@
 
       if (e.key === "Escape") {
         e.preventDefault();
+        closeGroupsPopover();
         closeInlineEditor(false);
         if (st.drag?.mode === "draw_bond") st.drag = null;
         st.lastAtomClick = null;
