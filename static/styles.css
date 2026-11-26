@@ -1497,6 +1497,25 @@ html[data-theme="dark"] .cmp-block-thumb {
   flex: 1 1 auto;
 }
 
+.cmp-pop-hint {
+  margin: 0;
+  font-size: 11.5px;
+  color: var(--text-muted);
+  line-height: 1.45;
+}
+
+.cmp-pop-extra {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.cmp-pop-extra .chip-btn {
+  height: 28px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+
 .cmp-pop-field {
   display: flex;
   flex-direction: column;
@@ -2742,7 +2761,9 @@ html[data-theme="dark"] .tok-b2 { color: #fdba74; }
   min-height: 240px;
   border: 1px solid var(--border);
   border-radius: 9px;
-  background: #ffffff;
+  background-color: #ffffff;
+  background-image: radial-gradient(rgba(100, 116, 139, 0.28) 1px, transparent 1px);
+  background-size: 20px 20px;
   overflow: hidden;
 }
 

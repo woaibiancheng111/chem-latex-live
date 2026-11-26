@@ -425,9 +425,10 @@
       const matrix = els.svg.getScreenCTM();
       if (!matrix) return { x: 0, y: 0, inside: false };
       const { x, y } = new DOMPoint(e.clientX, e.clientY).matrixTransform(matrix.inverse());
-      const vb = els.svg.viewBox.baseVal;
+      const rect = els.svg.getBoundingClientRect();
       const inside = Number.isFinite(x) && Number.isFinite(y)
-        && x >= vb.x && x <= vb.x + vb.width && y >= vb.y && y <= vb.y + vb.height;
+        && e.clientX >= rect.left && e.clientX <= rect.right
+        && e.clientY >= rect.top && e.clientY <= rect.bottom;
       return { x, y, inside };
     }
 
@@ -595,23 +596,6 @@
     function renderCanvas() {
       const svg = els.svg;
       svg.innerHTML = "";
-
-      const defs = createSvgEl("defs");
-      const pattern = createSvgEl("pattern", {
-        id: "sketchGrid",
-        width: 24,
-        height: 24,
-        patternUnits: "userSpaceOnUse",
-      });
-      pattern.appendChild(
-        createSvgEl("circle", { cx: 12, cy: 12, r: 1, fill: "rgba(100,116,139,0.28)" })
-      );
-      defs.appendChild(pattern);
-      svg.appendChild(defs);
-
-      svg.appendChild(
-        createSvgEl("rect", { x: 0, y: 0, width: 600, height: 400, fill: "url(#sketchGrid)" })
-      );
 
       // Draw aromatic inner circles
       const ringLayer = createSvgEl("g");

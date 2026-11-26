@@ -73,6 +73,15 @@
     return /\\schemestart|\\\[|\$\$|\\begin\{tikzpicture\}/.test(String(code || ""));
   }
 
+  function isSketchEditableCode(code) {
+    const s = String(code || "").trim();
+    if (!s || !/\\chemfig(?:\[[^\]]*\])?\{/.test(s)) return false;
+    if (/\\schemestart|\\schemestop|\\arrow|\\chemmove|\\ce\{|\\pu\{|\\begin\{|\\\[|\$\$|@\{|\\\+/.test(s)) {
+      return false;
+    }
+    return true;
+  }
+
   function escapeLatexText(raw) {
     const replacements = {
       "\\": "\\textbackslash{}",
@@ -623,6 +632,7 @@
       } else if (block.type === "plus" || block.type === "newline") {
         els.popBody.innerHTML = `<p class="cmp-pop-hint">此积木用于控制分隔或换行，可直接拖动调顺序或删除。</p>`;
       } else {
+        const sketchable = isSketchEditableCode(block.code);
         els.popBody.innerHTML = `
           <label class="cmp-pop-field">名称
             <input type="text" id="cmpPopName" value="${escapeHtml(block.name || "")}" />
@@ -630,18 +640,40 @@
           <label class="cmp-pop-field">LaTeX 结构代码
             <textarea id="cmpPopCode" rows="4" spellcheck="false">${escapeHtml(block.code || "")}</textarea>
           </label>
-          <div class="cmp-pop-extra">
-            <button type="button" class="chip-btn accent" id="cmpPopOpenSketch">⬡ 在 2D 分子画板中编辑结构</button>
-          </div>
+          ${sketchable
+            ? `<div class="cmp-pop-extra">
+                <button type="button" class="chip-btn accent" id="cmpPopOpenSketch">⬡ 在 2D 分子画板中编辑结构</button>
+              </div>`
+            : `<p class="cmp-pop-hint">此积木包含反应框图、机理弯箭头或复合公式，请切到 LaTeX 源码精修（2D 画板仅编辑单个分子结构）。</p>
+              <div class="cmp-pop-extra">
+                <button type="button" class="chip-btn accent" id="cmpPopOpenCode">&lt;/&gt; 切到 LaTeX 源码精修</button>
+              </div>`}
         `;
-        document.getElementById("cmpPopOpenSketch").addEventListener("click", () => {
+        document.getElementById("cmpPopOpenSketch")?.addEventListener("click", () => {
           const id = block.id;
           const liveCode = (document.getElementById("cmpPopCode")?.value || block.code || "").trim();
           const liveName = (document.getElementById("cmpPopName")?.value || block.name || "").trim();
+          if (!isSketchEditableCode(liveCode)) {
+            opts.toast?.("当前代码含反应框图或复合公式，请切到 LaTeX 源码编辑", true);
+            return;
+          }
           const codeChanged = liveCode !== (block.code || "").trim();
           const sketchData = codeChanged ? null : (block.sketchData || null);
           closePopover();
           opts.onOpenSketch?.({ blockId: id, sketchData, code: liveCode, name: liveName });
+        });
+        document.getElementById("cmpPopOpenCode")?.addEventListener("click", () => {
+          const liveCode = (document.getElementById("cmpPopCode")?.value || block.code || "").trim();
+          const liveName = (document.getElementById("cmpPopName")?.value || block.name || "").trim();
+          if (liveName && liveName !== block.name) block.name = liveName;
+          if (liveCode && liveCode !== (block.code || "").trim()) {
+            pushUndo();
+            block.code = liveCode;
+            block.svg = "";
+            syncOutput({ immediate: true });
+          }
+          closePopover();
+          opts.onSwitchToCode?.();
         });
       }
 
@@ -775,7 +807,7 @@
         syncOutput({ immediate: true });
       });
 
-      if (b.type === "chemfig") {
+      if (b.type === "chemfig" && isSketchEditableCode(b.code)) {
         const sketchBtn = document.createElement("button");
         sketchBtn.type = "button";
         sketchBtn.className = "cmp-mini-btn";
