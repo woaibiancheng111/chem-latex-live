@@ -13,6 +13,28 @@
 
   const STORAGE_KEY = "chemlatex_composer_v1";
   const SVG_NS = "http://www.w3.org/2000/svg";
+  const PT_PER_CM = 28.3465;
+
+  function parseSvgSizePt(svg) {
+    if (!svg || typeof svg !== "string") return null;
+    const tagMatch = svg.match(/<svg\b([^>]*)>/i);
+    if (!tagMatch) return null;
+    const attrs = tagMatch[1];
+    const wm = attrs.match(/\bwidth="([\d.]+)(?:pt)?"/i);
+    const hm = attrs.match(/\bheight="([\d.]+)(?:pt)?"/i);
+    if (wm && hm) {
+      const w = parseFloat(wm[1]);
+      const h = parseFloat(hm[1]);
+      if (Number.isFinite(w) && Number.isFinite(h) && w > 0 && h > 0) return { w, h };
+    }
+    const vb = attrs.match(/\bviewBox="[^"]*?([\d.]+)\s+([\d.]+)"/i);
+    if (vb) {
+      const w = parseFloat(vb[1]);
+      const h = parseFloat(vb[2]);
+      if (Number.isFinite(w) && Number.isFinite(h) && w > 0 && h > 0) return { w, h };
+    }
+    return null;
+  }
 
   const PALETTE_ITEMS = [
     { kind: "plus", label: "+", sub: "", title: "添加反应加号 +" },
@@ -250,12 +272,28 @@
       return (b.code || "").trim() || "\\ce{?}";
     }
 
-    function blockCenterPx(b) {
+    function blockSizePx(b) {
       const el = st.blockEls.get(b.id);
-      const fallbackW = b.type === "plus" ? 36 : b.type === "arrow" ? 82 : 90;
-      const fallbackH = b.type === "plus" ? 40 : b.type === "arrow" ? 56 : 74;
-      const w = el && el.offsetWidth ? el.offsetWidth : fallbackW;
-      const h = el && el.offsetHeight ? el.offsetHeight : fallbackH;
+      if (el && el.offsetWidth > 0 && el.offsetHeight > 0) {
+        return { w: el.offsetWidth, h: el.offsetHeight };
+      }
+      if (st.layoutMode === "free" && b.svg) {
+        const sz = parseSvgSizePt(b.svg);
+        if (sz) {
+          return {
+            w: Math.max(44, Math.min(520, sz.w) + 20),
+            h: Math.max(40, Math.min(260, sz.h) + 30),
+          };
+        }
+      }
+      return {
+        w: b.type === "plus" ? 36 : b.type === "arrow" ? 82 : 96,
+        h: b.type === "plus" ? 40 : b.type === "arrow" ? 56 : 74,
+      };
+    }
+
+    function blockCenterPx(b) {
+      const { w, h } = blockSizePx(b);
       return { cx: (b.x || 0) + w / 2, cy: (b.y || 0) + h / 2 };
     }
 
@@ -317,7 +355,17 @@
       const centers = active.map((b) => blockCenterPx(b));
       const minCx = Math.min(...centers.map((p) => p.cx));
       const maxCy = Math.max(...centers.map((p) => p.cy));
-      const pxPerCm = 72.0;
+      let effScale = 1.0;
+      for (const b of active) {
+        if (!b.svg) continue;
+        const sz = parseSvgSizePt(b.svg);
+        if (!sz) continue;
+        const card = blockSizePx(b);
+        const realW = Math.max(12, sz.w - 16);
+        const realH = Math.max(12, sz.h - 16);
+        effScale = Math.max(effScale, realW / Math.max(24, card.w), realH / Math.max(24, card.h));
+      }
+      const pxPerCm = PT_PER_CM / effScale;
 
       const boxDefs = [];
       const nodeLines = [];
@@ -392,7 +440,7 @@
           block.svg = svg;
           saveLocal();
           renderCanvas();
-          if (st.layoutMode === "free") syncOutput();
+          if (st.layoutMode === "free") syncOutput({ immediate: true });
         }
       } catch {
         // Leave fallback text
@@ -401,15 +449,78 @@
 
     function nextFreeCoords() {
       const active = st.blocks.filter((b) => b.type !== "newline");
-      if (active.length === 0) return { x: 80, y: 80 };
+      if (active.length === 0) return { x: 48, y: 56 };
       const last = active[active.length - 1];
-      let nx = (last.x || 60) + 150;
-      let ny = last.y || 80;
-      if (nx > 520) {
-        nx = 70;
-        ny += 110;
+      const lastSz = blockSizePx(last);
+      const maxW = Math.max(560, (els.canvas.clientWidth || 620) - 32);
+      let nx = Math.round(((last.x || 48) + lastSz.w + 28) / 8) * 8;
+      let ny = last.y || 56;
+      if (nx + 120 > maxW) {
+        const maxBottom = active.reduce((m, b) => {
+          const s = blockSizePx(b);
+          return Math.max(m, (b.y || 40) + s.h);
+        }, 56);
+        nx = 48;
+        ny = Math.round((maxBottom + 28) / 8) * 8;
       }
       return { x: nx, y: ny };
+    }
+
+    function autoLayoutFreeBlocks({ onlyIfOverlapping = false } = {}) {
+      const active = st.blocks.filter((b) => b.type !== "newline");
+      if (active.length === 0) return false;
+      if (onlyIfOverlapping) {
+        let overlaps = false;
+        for (let i = 0; i < active.length && !overlaps; i++) {
+          const a = active[i];
+          const as = blockSizePx(a);
+          const ax = a.x || 0;
+          const ay = a.y || 0;
+          for (let j = i + 1; j < active.length; j++) {
+            const b = active[j];
+            const bs = blockSizePx(b);
+            const bx = b.x || 0;
+            const by = b.y || 0;
+            if (ax < bx + bs.w + 8 && ax + as.w + 8 > bx && ay < by + bs.h + 8 && ay + as.h + 8 > by) {
+              overlaps = true;
+              break;
+            }
+          }
+        }
+        if (!overlaps) return false;
+      }
+
+      const maxRowWidth = Math.max(520, (els.canvas.clientWidth || 620) - 36);
+      const rows = [];
+      let row = [];
+      let rowW = 48;
+      let rowMaxH = 0;
+      active.forEach((b) => {
+        const sz = blockSizePx(b);
+        if (row.length > 0 && rowW + sz.w > maxRowWidth) {
+          rows.push({ items: row, maxH: rowMaxH });
+          row = [];
+          rowW = 48;
+          rowMaxH = 0;
+        }
+        row.push({ b, sz });
+        rowW += sz.w + 28;
+        rowMaxH = Math.max(rowMaxH, sz.h);
+      });
+      if (row.length > 0) rows.push({ items: row, maxH: rowMaxH });
+
+      let curY = 48;
+      rows.forEach((r) => {
+        let curX = 48;
+        const centerY = curY + r.maxH / 2;
+        r.items.forEach(({ b, sz }) => {
+          b.x = Math.round(curX / 8) * 8;
+          b.y = Math.max(16, Math.round((centerY - sz.h / 2) / 8) * 8);
+          curX += sz.w + 28;
+        });
+        curY += r.maxH + 28;
+      });
+      return true;
     }
 
     function makeBlockFromPalette(spec, pos = null) {
@@ -547,16 +658,16 @@
           type: "chemfig",
           name: "对羟基苯甲酸",
           code: "\\chemfig{[:30]**6((-[6]O-H)---(-[2]COOH)---)}",
-          x: 64,
-          y: 64,
+          x: 48,
+          y: 48,
         };
         const b2 = {
           id: uid(),
           type: "ce",
           name: "水分子",
           ce: "H2O",
-          x: 312,
-          y: 120,
+          x: 248,
+          y: 88,
         };
         st.blocks = [b1, b2];
         st.connectors = [{ id: uid("conn"), from: b1.id, to: b2.id, style: "dotted", label: "氢键" }];
@@ -1172,8 +1283,8 @@
       stage.append(guideH, guideV);
 
       const active = st.blocks.filter((b) => b.type !== "newline");
-      const maxBx = active.reduce((m, b) => Math.max(m, (b.x || 40) + 220), 680);
-      const maxBy = active.reduce((m, b) => Math.max(m, (b.y || 40) + 160), 360);
+      const maxBx = active.reduce((m, b) => Math.max(m, (b.x || 40) + blockSizePx(b).w + 80), 680);
+      const maxBy = active.reduce((m, b) => Math.max(m, (b.y || 40) + blockSizePx(b).h + 80), 360);
       svgEl.style.width = `${maxBx}px`;
       svgEl.style.height = `${maxBy}px`;
 
@@ -1242,8 +1353,8 @@
             b.y = ny;
             card.style.left = `${nx}px`;
             card.style.top = `${ny}px`;
-            svgEl.style.width = `${Math.max(parseInt(svgEl.style.width, 10) || 680, nx + 220)}px`;
-            svgEl.style.height = `${Math.max(parseInt(svgEl.style.height, 10) || 360, ny + 160)}px`;
+            svgEl.style.width = `${Math.max(parseInt(svgEl.style.width, 10) || 680, nx + card.offsetWidth + 80)}px`;
+            svgEl.style.height = `${Math.max(parseInt(svgEl.style.height, 10) || 360, ny + card.offsetHeight + 80)}px`;
             drawFreeConnectors(svgEl);
           };
 
@@ -1255,7 +1366,7 @@
             if (moved) {
               st.justDragged = true;
               setTimeout(() => { st.justDragged = false; }, 0);
-              syncOutput();
+              syncOutput({ immediate: true });
             }
           };
 
@@ -1395,14 +1506,10 @@
     els.freeBtn.addEventListener("click", () => {
       if (st.layoutMode === "free") return;
       st.layoutMode = "free";
-      // Spread blocks nicely if they all share default coords
-      st.blocks.forEach((b, i) => {
-        if (!b.x && !b.y) {
-          b.x = 50 + (i % 4) * 140;
-          b.y = 60 + Math.floor(i / 4) * 100;
-        }
-      });
       render();
+      if (autoLayoutFreeBlocks({ onlyIfOverlapping: true })) {
+        render();
+      }
       syncOutput({ immediate: true });
     });
 
@@ -1422,21 +1529,7 @@
       const active = st.blocks.filter((b) => b.type !== "newline");
       if (active.length === 0) return;
       pushUndo();
-      let curX = 48;
-      let rowCenterY = 96;
-      const maxRowWidth = Math.max(480, (els.canvas.clientWidth || 620) - 48);
-      active.forEach((b) => {
-        const el = st.blockEls.get(b.id);
-        const w = el && el.offsetWidth ? el.offsetWidth : (b.type === "plus" ? 36 : 90);
-        const h = el && el.offsetHeight ? el.offsetHeight : (b.type === "plus" ? 40 : 72);
-        if (curX > 48 && curX + w > maxRowWidth) {
-          curX = 48;
-          rowCenterY += 120;
-        }
-        b.x = Math.round(curX / 8) * 8;
-        b.y = Math.max(16, Math.round((rowCenterY - h / 2) / 8) * 8);
-        curX += w + 28;
-      });
+      autoLayoutFreeBlocks({ onlyIfOverlapping: false });
       render();
       syncOutput({ immediate: true });
     });

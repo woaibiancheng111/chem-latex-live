@@ -1399,6 +1399,25 @@ html[data-theme="dark"] .cmp-block-thumb {
   position: absolute;
   z-index: 2;
   cursor: move;
+  min-width: 44px;
+  max-width: none;
+  padding: 5px 7px;
+}
+
+.cmp-free-stage .cmp-block-thumb {
+  max-height: none;
+  padding: 2px 3px;
+}
+
+.cmp-free-stage .cmp-block-thumb svg {
+  max-width: 520px;
+  max-height: 260px;
+  width: auto;
+  height: auto;
+}
+
+.cmp-free-stage .cmp-block-cap {
+  max-width: 260px;
 }
 
 .cmp-conn-svg {
